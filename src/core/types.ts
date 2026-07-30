@@ -1,0 +1,261 @@
+// LLD §2: 모든 모듈이 import하는 핵심 타입 정의.
+// branded type으로 ID 혼용 방지, exactOptionalPropertyTypes에 맞춘 형태.
+
+// ---------- Branded IDs ----------
+
+export type TaskId = string & { readonly __brand: "TaskId" };
+export type MeetingId = string & { readonly __brand: "MeetingId" };
+export type ProjectId = string & { readonly __brand: "ProjectId" };
+
+export type IsoDateTime = string & { readonly __brand: "IsoDateTime" };
+export type IsoDate = string & { readonly __brand: "IsoDate" };
+
+// ---------- Enums ----------
+
+export const TASK_STATUS_ORDER = [
+  "hold",
+  "todo",
+  "doing",
+  "in-review",
+  "done",
+] as const;
+
+export type ColumnId = (typeof TASK_STATUS_ORDER)[number];
+export type TaskStatus = ColumnId;
+export type Priority = "low" | "medium" | "high";
+
+export const SCHEMA_VERSION = 1 as const;
+export type SchemaVersion = typeof SCHEMA_VERSION;
+
+export const DEFAULT_BOARD_COLUMN_DEFS: ReadonlyArray<{
+  readonly id: ColumnId;
+  readonly title: string;
+}> = [
+  { id: "hold", title: "HOLD" },
+  { id: "todo", title: "TODO" },
+  { id: "doing", title: "DOING" },
+  { id: "in-review", title: "IN REVIEW" },
+  { id: "done", title: "DONE" },
+];
+
+export function isTaskStatus(v: unknown): v is TaskStatus {
+  return typeof v === "string" && TASK_STATUS_ORDER.includes(v as TaskStatus);
+}
+
+export function normalizeHiddenStatuses(values: readonly unknown[]): ColumnId[] {
+  const requested = new Set(values.filter(isTaskStatus));
+  const hidden = TASK_STATUS_ORDER.filter((status) => requested.has(status));
+  return hidden.length >= TASK_STATUS_ORDER.length ? hidden.slice(0, -1) : hidden;
+}
+
+// ---------- Domain entities ----------
+
+export interface Task {
+  schemaVersion: SchemaVersion;
+  id: TaskId;
+  type: "task";
+  status: TaskStatus;
+  /** Markdown H1에서 derive한 표시용 title */
+  title: string;
+  project: ProjectId | null;
+  priority: Priority | null;
+  /** 외부 issue tracker key (예: "M29CEF-3126"). null이면 frontmatter에서 제거. */
+  jiraKey: string | null;
+  /** 카드에 표시할 짧은 plain text 비고. null이면 frontmatter에서 제거. */
+  remarks: string | null;
+  /** 검색/카드 preview용 Markdown body 첫 요약. 디스크에는 저장하지 않고 parse/create에서 derive. */
+  bodySummary?: string;
+  createdAt: IsoDateTime;
+  updatedAt: IsoDateTime;
+  /** archive된 경우 시각, 그렇지 않으면 null */
+  archivedAt: IsoDateTime | null;
+  /** ADR-0008: 우리 schema 외 frontmatter field passthrough */
+  passthrough: Record<string, unknown>;
+  /** frontmatter field 순서 (write 시 보존) */
+  fieldOrder: string[];
+  /** 마지막으로 알려진 file mtime (conflict detection) */
+  knownMtime: number;
+  /** Vault 안 절대 경로. rename에 따라 갱신 */
+  path: string;
+}
+
+export interface Meeting {
+  schemaVersion: SchemaVersion;
+  id: MeetingId;
+  type: "meeting";
+  title: string;
+  project: ProjectId | null;
+  date: IsoDate;
+  participants: string[];
+  createdAt: IsoDateTime;
+  updatedAt: IsoDateTime;
+  passthrough: Record<string, unknown>;
+  fieldOrder: string[];
+  knownMtime: number;
+  path: string;
+}
+
+export interface Project {
+  schemaVersion: SchemaVersion;
+  id: ProjectId;
+  type: "project";
+  title: string;
+  createdAt: IsoDateTime;
+  updatedAt: IsoDateTime;
+  passthrough: Record<string, unknown>;
+  fieldOrder: string[];
+  knownMtime: number;
+  path: string;
+}
+
+// ---------- Board ----------
+
+export interface BoardColumn {
+  id: ColumnId;
+  title: string;
+  taskIds: TaskId[];
+}
+
+export interface BoardState {
+  version: 1;
+  /** 항상 TASK_STATUS_ORDER 순서 */
+  columns: BoardColumn[];
+  updatedAt: IsoDateTime;
+}
+
+// ---------- Frontmatter wire types ----------
+
+/** Markdown 파일에서 읽은 frontmatter 한 단계 추상 */
+export interface ParsedFrontmatter {
+  /** 우리가 인식한 field만 */
+  managed: Record<string, unknown>;
+  /** unknown field — ADR-0008 passthrough */
+  passthrough: Record<string, unknown>;
+  /** 원본 순서 */
+  fieldOrder: string[];
+}
+
+/** 직렬화 직전의 task frontmatter 표현 */
+export interface TaskFrontmatterDoc {
+  schemaVersion: SchemaVersion;
+  id: string;
+  type: "task";
+  status: TaskStatus;
+  project: string | null;
+  priority: Priority | null;
+  /** undefined면 frontmatter에서 제거 */
+  jiraKey?: string;
+  /** undefined면 frontmatter에서 제거 */
+  remarks?: string;
+  createdAt: string;
+  updatedAt: string;
+  /** undefined면 frontmatter에서 제거 */
+  archivedAt?: string;
+}
+
+export interface MeetingFrontmatterDoc {
+  schemaVersion: SchemaVersion;
+  id: string;
+  type: "meeting";
+  project: string | null;
+  date: string;
+  participants: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectFrontmatterDoc {
+  schemaVersion: SchemaVersion;
+  id: string;
+  type: "project";
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ---------- Service inputs ----------
+
+export interface CreateTaskInput {
+  title: string;
+  status?: TaskStatus;
+  project?: ProjectId | null;
+  priority?: Priority | null;
+  jiraKey?: string | null;
+  remarks?: string | null;
+  body?: string;
+}
+
+export interface UpdateTaskInput {
+  title?: string;
+  status?: TaskStatus;
+  project?: ProjectId | null;
+  priority?: Priority | null;
+  jiraKey?: string | null;
+  remarks?: string | null;
+}
+
+export interface CreateProjectInput {
+  title: string;
+}
+
+export interface CreateMeetingInput {
+  title: string;
+  date: IsoDate;
+  project?: ProjectId | null;
+  participants?: string[];
+  body?: string;
+}
+
+// ---------- Event bus ----------
+
+export type ConflictReason = "external_modify" | "merge_failed" | "sync_collision";
+
+export type TaskMasterEvent =
+  | { type: "tasks:indexed"; tasks: Task[] }
+  | { type: "task:created"; task: Task }
+  | { type: "task:updated"; task: Task; previous: Task }
+  | { type: "task:deleted"; taskId: TaskId }
+  | { type: "task:archived"; taskId: TaskId }
+  | { type: "board:updated"; board: BoardState }
+  | { type: "vault:conflict"; entityId: string; path: string; reason: ConflictReason }
+  | { type: "parser:error"; path: string; reason: string };
+
+// ---------- Diagnostics ----------
+
+export type DiagnosticKind = "parse" | "flush" | "conflict" | "boot";
+
+export interface DiagnosticEntry {
+  ts: IsoDateTime;
+  kind: DiagnosticKind;
+  path?: string;
+  entityId?: string;
+  message: string;
+  cause?: string;
+}
+
+// ---------- Settings ----------
+
+export interface PluginSettings {
+  version: 1;
+  /** 기본 "TaskMaster" */
+  dataRootPath: string;
+  /** 기본 500ms */
+  saveDebounceMs: number;
+  /** 기본 true */
+  confirmOnDelete: boolean;
+  /** 기본 "auto" */
+  locale: "auto" | "ko" | "en";
+  /** 외부 issue tracker base URL. 끝의 "/"는 자동 보정. 빈 문자열이면 link 비활성. */
+  jiraBaseUrl: string;
+  /** UI 전용: 숨긴 kanban status 목록. task/board semantic data와 분리한다. */
+  hiddenStatuses: ColumnId[];
+}
+
+export const DEFAULT_SETTINGS: PluginSettings = {
+  version: 1,
+  dataRootPath: "TaskMaster",
+  saveDebounceMs: 500,
+  confirmOnDelete: true,
+  locale: "auto",
+  jiraBaseUrl: "",
+  hiddenStatuses: [],
+};

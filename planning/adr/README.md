@@ -1,0 +1,38 @@
+# Architecture Decision Records
+
+이 디렉토리는 TaskMaster Obsidian 플러그인의 architectural decision record(ADR)를 보관합니다.
+
+## ADR이란
+
+ADR은 프로젝트의 중요한 기술적 결정을 시간 순서대로 기록한 짧은 문서입니다. 각 ADR은 다음을 답합니다.
+
+- **무엇을 결정했는가** (Decision)
+- **왜 그렇게 결정했는가** (Context)
+- **무엇을 포기했는가** (Alternatives)
+- **어떤 trade-off를 받아들였는가** (Consequences)
+
+ADR은 미래의 코드 리뷰어와 신규 합류자가 "왜 이렇게 만들어졌지?"를 이해하는 데 사용됩니다.
+
+## 작성 규칙
+
+- 파일명: `{4자리 번호}-{kebab-case 제목}.md` (예: `0001-hybrid-storage.md`)
+- 번호는 한 번 부여하면 재사용하지 않습니다.
+- Status는 `Proposed` → `Accepted` → (필요 시) `Deprecated` / `Superseded by ADR-XXXX`로만 변경합니다.
+- ADR을 수정하지 말고 **새 ADR을 만들어 supersede** 합니다 (이력 보존).
+- 형식은 `0000-template.md`를 참조합니다.
+
+## Index
+
+| ID | 제목 | Status |
+| --- | --- | --- |
+| [0001](0001-hybrid-storage.md) | Markdown source-of-truth + JSON cache의 hybrid storage | Accepted |
+| [0002](0002-board-json-in-vault.md) | `.board.json`을 Vault 안에 두어 device 간 sync 지원 | Accepted |
+| [0003](0003-ulid-and-short-id-filename.md) | ULID 기반 ID와 short ID 파일명 | Accepted |
+| [0004](0004-immediate-flush-for-semantic-data.md) | 의미 데이터는 즉시 flush, 시각 데이터는 debounce | Accepted |
+| [0005](0005-metadata-cache-first.md) | 보드 스캔에 metadataCache 우선 사용 | Accepted |
+| [0006](0006-tailwind-style-isolation.md) | Tailwind v3 + `tm-` prefix + scoped CSS | Accepted |
+| [0007](0007-zustand-state-store.md) | Plugin core와 React UI를 잇는 state store로 Zustand 채택 | Accepted |
+| [0008](0008-frontmatter-passthrough.md) | Markdown serializer는 unknown frontmatter field를 passthrough | Accepted |
+| [0009](0009-mobile-no-dnd-phase1.md) | Phase 1 모바일은 dnd 미사용, 명시적 액션 버튼만 | Accepted |
+| [0010](0010-detail-ux-open-note-only.md) | Phase 1 카드 상세는 Obsidian note 열기만 | Accepted |
+| [0011](0011-project-quick-memo-storage.md) | Project quick memo는 project note append를 기본으로 한다 | Accepted |

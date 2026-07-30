@@ -1,0 +1,513 @@
+/* ADR-0006: preflight 비활성화이므로 @tailwind base 사용 안 함. */
+.tm-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+.tm-fixed {
+  position: fixed;
+}
+.tm-absolute {
+  position: absolute;
+}
+.tm-relative {
+  position: relative;
+}
+.tm-inset-0 {
+  inset: 0px;
+}
+.tm-right-0 {
+  right: 0px;
+}
+.tm-top-full {
+  top: 100%;
+}
+.tm-z-10 {
+  z-index: 10;
+}
+.tm-z-50 {
+  z-index: 50;
+}
+.tm-my-1 {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+.tm-mb-1 {
+  margin-bottom: 0.25rem;
+}
+.tm-mb-2 {
+  margin-bottom: 0.5rem;
+}
+.tm-mb-3 {
+  margin-bottom: 0.75rem;
+}
+.tm-ml-0\.5 {
+  margin-left: 0.125rem;
+}
+.tm-ml-2 {
+  margin-left: 0.5rem;
+}
+.tm-mt-0\.5 {
+  margin-top: 0.125rem;
+}
+.tm-mt-2 {
+  margin-top: 0.5rem;
+}
+.tm-mt-3 {
+  margin-top: 0.75rem;
+}
+.tm-mt-4 {
+  margin-top: 1rem;
+}
+.tm-block {
+  display: block;
+}
+.tm-inline-block {
+  display: inline-block;
+}
+.tm-flex {
+  display: flex;
+}
+.tm-inline-flex {
+  display: inline-flex;
+}
+.tm-grid {
+  display: grid;
+}
+.tm-h-2 {
+  height: 0.5rem;
+}
+.tm-h-3\.5 {
+  height: 0.875rem;
+}
+.tm-h-full {
+  height: 100%;
+}
+.tm-max-h-64 {
+  max-height: 16rem;
+}
+.tm-max-h-\[90vh\] {
+  max-height: 90vh;
+}
+.tm-min-h-0 {
+  min-height: 0px;
+}
+.tm-min-h-32 {
+  min-height: 8rem;
+}
+.tm-min-h-5 {
+  min-height: 1.25rem;
+}
+.tm-w-2 {
+  width: 0.5rem;
+}
+.tm-w-3\.5 {
+  width: 0.875rem;
+}
+.tm-w-32 {
+  width: 8rem;
+}
+.tm-w-40 {
+  width: 10rem;
+}
+.tm-w-72 {
+  width: 18rem;
+}
+.tm-w-80 {
+  width: 20rem;
+}
+.tm-w-96 {
+  width: 24rem;
+}
+.tm-w-full {
+  width: 100%;
+}
+.tm-min-w-0 {
+  min-width: 0px;
+}
+.tm-min-w-24 {
+  min-width: 6rem;
+}
+.tm-min-w-32 {
+  min-width: 8rem;
+}
+.tm-min-w-40 {
+  min-width: 10rem;
+}
+.tm-max-w-full {
+  max-width: 100%;
+}
+.tm-flex-1 {
+  flex: 1 1 0%;
+}
+.tm-shrink-0 {
+  flex-shrink: 0;
+}
+.tm-cursor-grab {
+  cursor: grab;
+}
+.tm-cursor-pointer {
+  cursor: pointer;
+}
+.tm-select-none {
+  -webkit-user-select: none;
+     -moz-user-select: none;
+          user-select: none;
+}
+.tm-resize-y {
+  resize: vertical;
+}
+.tm-grid-cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.tm-flex-col {
+  flex-direction: column;
+}
+.tm-flex-wrap {
+  flex-wrap: wrap;
+}
+.tm-items-start {
+  align-items: flex-start;
+}
+.tm-items-center {
+  align-items: center;
+}
+.tm-items-baseline {
+  align-items: baseline;
+}
+.tm-justify-end {
+  justify-content: flex-end;
+}
+.tm-justify-center {
+  justify-content: center;
+}
+.tm-justify-between {
+  justify-content: space-between;
+}
+.tm-gap-1 {
+  gap: 0.25rem;
+}
+.tm-gap-1\.5 {
+  gap: 0.375rem;
+}
+.tm-gap-2 {
+  gap: 0.5rem;
+}
+.tm-gap-3 {
+  gap: 0.75rem;
+}
+.tm-gap-4 {
+  gap: 1rem;
+}
+.tm-gap-6 {
+  gap: 1.5rem;
+}
+.tm-space-y-1 > :not([hidden]) ~ :not([hidden]) {
+  --tw-space-y-reverse: 0;
+  margin-top: calc(0.25rem * calc(1 - var(--tw-space-y-reverse)));
+  margin-bottom: calc(0.25rem * var(--tw-space-y-reverse));
+}
+.tm-space-y-2 > :not([hidden]) ~ :not([hidden]) {
+  --tw-space-y-reverse: 0;
+  margin-top: calc(0.5rem * calc(1 - var(--tw-space-y-reverse)));
+  margin-bottom: calc(0.5rem * var(--tw-space-y-reverse));
+}
+.tm-divide-y > :not([hidden]) ~ :not([hidden]) {
+  --tw-divide-y-reverse: 0;
+  border-top-width: calc(1px * calc(1 - var(--tw-divide-y-reverse)));
+  border-bottom-width: calc(1px * var(--tw-divide-y-reverse));
+}
+.tm-divide-tm-border > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--background-modifier-border);
+}
+.tm-overflow-hidden {
+  overflow: hidden;
+}
+.tm-overflow-x-auto {
+  overflow-x: auto;
+}
+.tm-overflow-y-auto {
+  overflow-y: auto;
+}
+.tm-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-break-words {
+  overflow-wrap: break-word;
+}
+.tm-rounded {
+  border-radius: 0.25rem;
+}
+.tm-rounded-full {
+  border-radius: 9999px;
+}
+.tm-rounded-md {
+  border-radius: 0.375rem;
+}
+.tm-border {
+  border-width: 1px;
+}
+.tm-border-2 {
+  border-width: 2px;
+}
+.tm-border-b {
+  border-bottom-width: 1px;
+}
+.tm-border-b-2 {
+  border-bottom-width: 2px;
+}
+.tm-border-t {
+  border-top-width: 1px;
+}
+.tm-border-t-2 {
+  border-top-width: 2px;
+}
+.tm-border-solid {
+  border-style: solid;
+}
+.tm-border-dashed {
+  border-style: dashed;
+}
+.tm-border-tm-accent {
+  border-color: var(--interactive-accent);
+}
+.tm-border-tm-border {
+  border-color: var(--background-modifier-border);
+}
+.tm-border-transparent {
+  border-color: transparent;
+}
+.tm-bg-black\/40 {
+  background-color: rgb(0 0 0 / 0.4);
+}
+.tm-bg-tm-accent {
+  background-color: var(--interactive-accent);
+}
+.tm-bg-tm-bg {
+  background-color: var(--background-primary);
+}
+.tm-bg-tm-bg-alt {
+  background-color: var(--background-secondary);
+}
+.tm-bg-tm-bg-hover {
+  background-color: var(--background-modifier-hover);
+}
+.tm-p-2 {
+  padding: 0.5rem;
+}
+.tm-p-3 {
+  padding: 0.75rem;
+}
+.tm-p-4 {
+  padding: 1rem;
+}
+.tm-px-1\.5 {
+  padding-left: 0.375rem;
+  padding-right: 0.375rem;
+}
+.tm-px-2 {
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+.tm-px-3 {
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+}
+.tm-px-4 {
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+.tm-py-0\.5 {
+  padding-top: 0.125rem;
+  padding-bottom: 0.125rem;
+}
+.tm-py-1 {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+.tm-py-1\.5 {
+  padding-top: 0.375rem;
+  padding-bottom: 0.375rem;
+}
+.tm-py-2 {
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+.tm-py-3 {
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+.tm-py-4 {
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+}
+.tm-py-6 {
+  padding-top: 1.5rem;
+  padding-bottom: 1.5rem;
+}
+.tm-pt-2 {
+  padding-top: 0.5rem;
+}
+.tm-text-left {
+  text-align: left;
+}
+.tm-text-center {
+  text-align: center;
+}
+.tm-font-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+.tm-text-\[10px\] {
+  font-size: 10px;
+}
+.tm-text-base {
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+.tm-text-lg {
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+}
+.tm-text-sm {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+.tm-text-xs {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+.tm-font-medium {
+  font-weight: 500;
+}
+.tm-font-normal {
+  font-weight: 400;
+}
+.tm-font-semibold {
+  font-weight: 600;
+}
+.tm-uppercase {
+  text-transform: uppercase;
+}
+.tm-leading-5 {
+  line-height: 1.25rem;
+}
+.tm-leading-none {
+  line-height: 1;
+}
+.tm-tracking-wide {
+  letter-spacing: 0.025em;
+}
+.tm-text-tm-accent {
+  color: var(--interactive-accent);
+}
+.tm-text-tm-error {
+  color: var(--text-error);
+}
+.tm-text-tm-faint {
+  color: var(--text-faint);
+}
+.tm-text-tm-muted {
+  color: var(--text-muted);
+}
+.tm-text-tm-text {
+  color: var(--text-normal);
+}
+.tm-text-tm-warning {
+  color: var(--text-warning);
+}
+.tm-text-white {
+  --tw-text-opacity: 1;
+  color: rgb(255 255 255 / var(--tw-text-opacity, 1));
+}
+.tm-shadow-md {
+  --tw-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --tw-shadow-colored: 0 4px 6px -1px var(--tw-shadow-color), 0 2px 4px -2px var(--tw-shadow-color);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+}
+.tm-transition-all {
+  transition-property: all;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+.\[-\:\.\] {
+  -: .;
+}
+
+/* TaskMaster scope. 모든 React 트리는 .taskmaster-root 하위에서 mount된다. */
+.taskmaster-root {
+  height: 100%;
+  overflow: hidden;
+  color: var(--text-normal);
+}
+
+/* preflight 비활성화 보완: ul/li 기본 스타일 reset (host CSS는 그대로). */
+.taskmaster-root ul,
+.taskmaster-root ol {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+}
+.taskmaster-root li {
+  list-style: none;
+}
+
+.taskmaster-root *:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.hover\:tm-bg-tm-bg-hover:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.hover\:tm-text-tm-text:hover {
+  color: var(--text-normal);
+}
+
+.hover\:tm-underline:hover {
+  text-decoration-line: underline;
+}
+
+.hover\:tm-opacity-90:hover {
+  opacity: 0.9;
+}
+
+.focus\:tm-outline-none:focus {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+
+.focus\:tm-ring-2:focus {
+  --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);
+  --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color);
+  box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
+}
+
+.focus\:tm-ring-tm-accent:focus {
+  --tw-ring-color: var(--interactive-accent);
+}
+
+.active\:tm-cursor-grabbing:active {
+  cursor: grabbing;
+}
+
+.disabled\:tm-cursor-not-allowed:disabled {
+  cursor: not-allowed;
+}
+
+.disabled\:tm-opacity-50:disabled {
+  opacity: 0.5;
+}
+
+.disabled\:tm-opacity-60:disabled {
+  opacity: 0.6;
+}
