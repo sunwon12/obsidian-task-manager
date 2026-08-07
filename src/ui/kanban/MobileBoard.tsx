@@ -5,6 +5,7 @@ import { TFile } from "obsidian";
 import { useServices, useStore } from "../../app/providers/TaskMasterProvider";
 import { useFilteredBoard } from "../../store/selectors";
 import { PriorityBadge } from "../components/PriorityBadge";
+import { TaskTags } from "../components/TaskTags";
 import { confirmDialog } from "../components/confirmDialog";
 import { useDismissiblePopover } from "../hooks/useDismissiblePopover";
 import { t } from "../../i18n";
@@ -223,6 +224,7 @@ const MobileCard: React.FC<{ taskId: TaskId }> = ({ taskId }) => {
     project: ProjectId | null;
     jiraKey: string | null;
     remarks: string | null;
+    tags: string[];
   }): Promise<void> {
     await services.taskService.updateTask(taskId, input);
   }
@@ -252,6 +254,7 @@ const MobileCard: React.FC<{ taskId: TaskId }> = ({ taskId }) => {
               <span className="tm-text-xs tm-text-tm-muted tm-font-mono">{task.jiraKey}</span>
             )}
           </div>
+          <TaskTags tags={task.tags} />
         </button>
         {prev && (
           <button

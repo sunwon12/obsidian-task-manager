@@ -14,6 +14,7 @@ interface Props {
     priority: Priority | null;
     jiraKey: string | null;
     remarks: string | null;
+    tags: string[];
   }) => Promise<void> | void;
 }
 
@@ -23,6 +24,7 @@ export const NewTaskModal: React.FC<Props> = ({ onClose, initialStatus = "todo",
   const [priority, setPriority] = React.useState<Priority | "none">("none");
   const [jiraKey, setJiraKey] = React.useState("");
   const [remarks, setRemarks] = React.useState("");
+  const [tags, setTags] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const titleId = React.useId();
@@ -30,6 +32,7 @@ export const NewTaskModal: React.FC<Props> = ({ onClose, initialStatus = "todo",
   const priorityId = React.useId();
   const jiraKeyId = React.useId();
   const remarksId = React.useId();
+  const tagsId = React.useId();
 
   React.useEffect(() => {
     inputRef.current?.focus();
@@ -55,6 +58,7 @@ export const NewTaskModal: React.FC<Props> = ({ onClose, initialStatus = "todo",
         priority: priority === "none" ? null : priority,
         jiraKey: jiraKey.trim() || null,
         remarks: remarks.trim() || null,
+        tags: parseTags(tags),
       });
     } catch (err) {
       console.error("TaskMaster new task create failed", err);
@@ -142,6 +146,18 @@ export const NewTaskModal: React.FC<Props> = ({ onClose, initialStatus = "todo",
           className="tm-w-full tm-resize-y tm-px-3 tm-py-2 tm-bg-tm-bg-alt tm-border tm-border-tm-border tm-rounded tm-text-tm-text"
         />
 
+        <label htmlFor={tagsId} className="tm-block tm-text-sm tm-mt-3 tm-mb-1">
+          {t("modal.task.tags")}
+        </label>
+        <input
+          id={tagsId}
+          type="text"
+          value={tags}
+          onChange={(e) => setTags(e.target.value)}
+          placeholder={t("modal.task.tagsPlaceholder")}
+          className="tm-w-full tm-px-3 tm-py-2 tm-bg-tm-bg-alt tm-border tm-border-tm-border tm-rounded tm-text-tm-text"
+        />
+
         <div className="tm-flex tm-justify-end tm-gap-2 tm-mt-4">
           <button type="button" onClick={onClose} className="tm-px-3 tm-py-1.5 tm-text-sm">
             {t("modal.task.cancel")}
@@ -158,3 +174,7 @@ export const NewTaskModal: React.FC<Props> = ({ onClose, initialStatus = "todo",
     </div>
   );
 };
+
+function parseTags(value: string): string[] {
+  return value.split(",").map((tag) => tag.trim()).filter(Boolean);
+}

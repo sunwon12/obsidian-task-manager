@@ -26,6 +26,7 @@ export class TaskService {
     const id = newId("task") as TaskId;
     const jiraKey = (input.jiraKey ?? "").trim() || null;
     const remarks = (input.remarks ?? "").trim() || null;
+    const tags = normalizeTags(input.tags ?? []);
     const draft: Task = {
       schemaVersion: SCHEMA_VERSION,
       id,
@@ -36,6 +37,7 @@ export class TaskService {
       priority: input.priority ?? null,
       jiraKey,
       remarks,
+      tags,
       bodySummary: summarizeBody(input.body ?? ""),
       createdAt: nowIso(),
       updatedAt: nowIso(),
@@ -43,7 +45,7 @@ export class TaskService {
       passthrough: {},
       fieldOrder: [
         "schemaVersion", "id", "type", "status", "project",
-        "priority", ...(jiraKey ? ["jiraKey"] : []), ...(remarks ? ["remarks"] : []),
+        "priority", ...(jiraKey ? ["jiraKey"] : []), ...(remarks ? ["remarks"] : []), ...(tags.length ? ["tags"] : []),
         "createdAt", "updatedAt",
       ],
       knownMtime: 0,
@@ -120,6 +122,11 @@ export class TaskService {
     if (hasOwn(input, "remarks")) {
       const remarks = (input.remarks ?? "").trim() || null;
       if (remarks !== next.remarks) next = { ...next, remarks };
+    }
+
+    if (hasOwn(input, "tags")) {
+      const tags = normalizeTags(input.tags ?? []);
+      if (tags.join("\u0000") !== (next.tags ?? []).join("\u0000")) next = { ...next, tags };
     }
 
     if (next === previous) return previous;
@@ -206,4 +213,8 @@ function hasOwn<T extends object, K extends PropertyKey>(
   key: K,
 ): obj is T & Record<K, unknown> {
   return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function normalizeTags(tags: readonly string[]): string[] {
+  return [...new Set(tags.map((tag) => tag.trim().replace(/^#/u, "")).filter(Boolean))];
 }

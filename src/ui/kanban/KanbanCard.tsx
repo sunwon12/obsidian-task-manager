@@ -8,6 +8,7 @@ import { TFile } from "obsidian";
 import { useServices, useStore } from "../../app/providers/TaskMasterProvider";
 import { useFilteredBoard } from "../../store/selectors";
 import { PriorityBadge } from "../components/PriorityBadge";
+import { TaskTags } from "../components/TaskTags";
 import { confirmDialog } from "../components/confirmDialog";
 import { t } from "../../i18n";
 import { TASK_STATUS_ORDER } from "../../core/types";
@@ -70,6 +71,7 @@ export const KanbanCard: React.FC<Props> = ({ taskId }) => {
     project: ProjectId | null;
     jiraKey: string | null;
     remarks: string | null;
+    tags: string[];
   }): Promise<void> {
     if (!task) return;
     await services.taskService.updateTask(taskId, input);
@@ -151,6 +153,7 @@ export const KanbanCard: React.FC<Props> = ({ taskId }) => {
             <PriorityBadge priority={task.priority} />
             {task.jiraKey && <JiraLink jiraKey={task.jiraKey} />}
           </div>
+          <TaskTags tags={task.tags} />
           <RemarksInlineEditor
             taskId={taskId}
             value={task.remarks}

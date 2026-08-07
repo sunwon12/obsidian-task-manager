@@ -63,6 +63,8 @@ export interface Task {
   jiraKey: string | null;
   /** 카드에 표시할 짧은 plain text 비고. null이면 frontmatter에서 제거. */
   remarks: string | null;
+  /** 업무, 학습 등 카드 분류용 사용자 태그. */
+  tags?: string[];
   /** 검색/카드 preview용 Markdown body 첫 요약. 디스크에는 저장하지 않고 parse/create에서 derive. */
   bodySummary?: string;
   createdAt: IsoDateTime;
@@ -147,6 +149,8 @@ export interface TaskFrontmatterDoc {
   jiraKey?: string;
   /** undefined면 frontmatter에서 제거 */
   remarks?: string;
+  /** undefined면 frontmatter에서 제거 */
+  tags?: string[];
   createdAt: string;
   updatedAt: string;
   /** undefined면 frontmatter에서 제거 */
@@ -181,6 +185,7 @@ export interface CreateTaskInput {
   priority?: Priority | null;
   jiraKey?: string | null;
   remarks?: string | null;
+  tags?: string[];
   body?: string;
 }
 
@@ -191,6 +196,7 @@ export interface UpdateTaskInput {
   priority?: Priority | null;
   jiraKey?: string | null;
   remarks?: string | null;
+  tags?: string[];
 }
 
 export interface CreateProjectInput {

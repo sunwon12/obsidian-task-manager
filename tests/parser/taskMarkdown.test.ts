@@ -140,10 +140,8 @@ describe("parseTask", () => {
       "updatedAt: 2026-05-08T14:45:00.000Z\ntags:\n  - alpha\ndeadline: 2026-06-01",
     );
     const result = parseTask(raw);
-    expect(result?.task.passthrough).toEqual({
-      tags: ["alpha"],
-      deadline: "2026-06-01",
-    });
+    expect(result?.task.tags).toEqual(["alpha"]);
+    expect(result?.task.passthrough).toEqual({ deadline: "2026-06-01" });
   });
 
   it("uses Untitled when body has no H1", () => {
@@ -192,7 +190,8 @@ describe("serializeTask", () => {
   it("preserves passthrough across round-trip", () => {
     const task = makeTask({
       project: validProject as ProjectId,
-      passthrough: { tags: ["alpha", "urgent"], deadline: "2026-06-01" },
+      tags: ["alpha", "urgent"],
+      passthrough: { deadline: "2026-06-01" },
       fieldOrder: [
         "schemaVersion", "id", "type", "status", "project",
         "priority", "createdAt", "updatedAt", "tags", "deadline",
@@ -200,6 +199,7 @@ describe("serializeTask", () => {
     });
     const out = serializeTask(task, "본문\n");
     const reparsed = parseTask(out);
+    expect(reparsed?.task.tags).toEqual(task.tags);
     expect(reparsed?.task.passthrough).toEqual(task.passthrough);
   });
 

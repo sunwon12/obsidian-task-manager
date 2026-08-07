@@ -17,7 +17,7 @@ export type EntityKind = "task" | "meeting" | "project";
 const KNOWN_FIELDS: Record<EntityKind, ReadonlySet<string>> = {
   task: new Set([
     "schemaVersion", "id", "type", "status", "project",
-    "priority", "jiraKey", "remarks", "createdAt", "updatedAt", "archivedAt",
+    "priority", "jiraKey", "remarks", "tags", "createdAt", "updatedAt", "archivedAt",
   ]),
   meeting: new Set([
     "schemaVersion", "id", "type", "project", "date",

@@ -33,10 +33,7 @@ body
       type: "task",
       status: "doing",
     });
-    expect(fm.passthrough).toEqual({
-      tags: ["alpha", "urgent"],
-      deadline: "2026-06-01",
-    });
+    expect(fm.passthrough).toEqual({ deadline: "2026-06-01" });
     expect(fm.fieldOrder).toEqual([
       "schemaVersion", "id", "type", "status", "tags", "deadline",
     ]);

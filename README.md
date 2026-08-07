@@ -34,6 +34,7 @@ Local Markdown tasks ──┘
 
 - **One Kanban board** — HOLD, TODO, DOING, IN REVIEW, and DONE.
 - **Jira sync** — import your assigned Jira issues with JQL; no duplicate manual cards.
+- **Tags that stay visible** — classify cards with tags such as `업무`, `학습`, or `업무외` and see them directly on the board.
 - **Markdown-native** — task cards, projects, meetings, and memos are ordinary files you can search, link, edit, and back up.
 - **Projects that hold context** — attach tasks, meeting notes, and quick memos to a project.
 - **Fast daily use** — drag-and-drop on desktop, focused mobile controls, keyboard shortcuts, search, priority and project filters.
@@ -117,8 +118,9 @@ The API token is stored only in Obsidian's device-local plugin data. It is never
 1. Let Jira sync work tickets onto the board.
 2. Add personal tasks, ideas, and meeting follow-ups directly in TaskMaster.
 3. Drag cards through the board as work progresses.
-4. Select a project to keep its tasks, notes, meetings, and quick memos together.
-5. Archive completed work when you no longer need it on the board.
+4. Add comma-separated tags while creating or editing a card — for example: `업무, 학습`.
+5. Select a project to keep its tasks, notes, meetings, and quick memos together.
+6. Archive completed work when you no longer need it on the board.
 
 ### Useful shortcuts
 

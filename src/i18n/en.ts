@@ -99,6 +99,8 @@ const en: Record<keyof typeof ko, string> = {
   "modal.task.jiraKeyPlaceholder": "e.g., PROJ-1234",
   "modal.task.remarks": "Remarks",
   "modal.task.remarksPlaceholder": "Short note shown on the card",
+  "modal.task.tags": "Tags",
+  "modal.task.tagsPlaceholder": "e.g. work, learning, personal",
   "modal.task.cancel": "Cancel",
   "modal.task.create": "Create",
   "modal.task.creating": "Creating...",

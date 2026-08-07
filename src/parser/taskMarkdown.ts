@@ -43,6 +43,7 @@ export function parseTask(raw: string): ParsedTask | null {
       remarks: typeof m["remarks"] === "string" && m["remarks"].trim().length > 0
         ? m["remarks"].trim()
         : null,
+      tags: normalizeTags(m["tags"]),
       bodySummary: extractBodySummary(body),
       createdAt: typeof m["createdAt"] === "string"
         ? (m["createdAt"] as IsoDateTime)
@@ -73,6 +74,7 @@ export function serializeTask(task: Task, body: string): string {
   };
   if (task.jiraKey) doc.jiraKey = task.jiraKey;
   if (task.remarks) doc.remarks = task.remarks;
+  if (task.tags?.length) doc.tags = normalizeTags(task.tags);
   if (task.archivedAt) doc.archivedAt = task.archivedAt;
 
   return serializeFile(
@@ -111,4 +113,11 @@ function extractBodySummary(body: string): string {
 
 function isValidPriority(v: unknown): v is Priority | null {
   return v === "low" || v === "medium" || v === "high" || v === null;
+}
+
+function normalizeTags(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((tag): tag is string => typeof tag === "string")
+    .map((tag) => tag.trim().replace(/^#/u, ""))
+    .filter(Boolean))];
 }

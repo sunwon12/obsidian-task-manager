@@ -119,6 +119,14 @@ describe("TaskService", () => {
     expect(raw).toContain("jiraKey: M29CEF-3126");
   });
 
+  it("creates, displays, and persists normalized tags", async () => {
+    const { tasks, store, app } = build();
+    const task = await tasks.createTask({ title: "x", tags: ["업무", " #학습 ", "업무", ""] });
+    expect(store.getState().tasks.get(task.id)?.tags).toEqual(["업무", "학습"]);
+    const raw = await app.vault.read(app.vault.getAbstractFileByPath(task.path) as never);
+    expect(raw).toContain("tags:\n  - 업무\n  - 학습");
+  });
+
   it("setJiraKey updates existing task", async () => {
     const { tasks, store } = build();
     const task = await tasks.createTask({ title: "x" });

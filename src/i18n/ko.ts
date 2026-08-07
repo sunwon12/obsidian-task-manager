@@ -97,6 +97,8 @@ const ko = {
   "modal.task.jiraKeyPlaceholder": "예: M29CEF-3126",
   "modal.task.remarks": "비고",
   "modal.task.remarksPlaceholder": "카드에 표시할 짧은 메모",
+  "modal.task.tags": "태그",
+  "modal.task.tagsPlaceholder": "예: 업무, 학습, 업무외",
   "modal.task.cancel": "취소",
   "modal.task.create": "만들기",
   "modal.task.creating": "생성 중...",

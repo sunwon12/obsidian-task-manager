@@ -130,6 +130,7 @@ const ColumnQuickAddInline: React.FC<{
     priority: Priority | null;
     jiraKey: string | null;
     remarks: string | null;
+    tags: string[];
   }): Promise<void> {
     await services.taskService.createTask({
       ...input,

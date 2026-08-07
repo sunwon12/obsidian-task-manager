@@ -12,6 +12,7 @@ interface Props {
     project: ProjectId | null;
     jiraKey: string | null;
     remarks: string | null;
+    tags: string[];
   }) => Promise<void> | void;
 }
 
@@ -22,6 +23,7 @@ export const EditTaskModal: React.FC<Props> = ({ task, onClose, onSave }) => {
   const [project, setProject] = React.useState<ProjectId | "none">(task.project ?? "none");
   const [jiraKey, setJiraKey] = React.useState(task.jiraKey ?? "");
   const [remarks, setRemarks] = React.useState(task.remarks ?? "");
+  const [tags, setTags] = React.useState((task.tags ?? []).join(", "));
   const [submitting, setSubmitting] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const titleId = React.useId();
@@ -29,6 +31,7 @@ export const EditTaskModal: React.FC<Props> = ({ task, onClose, onSave }) => {
   const projectId = React.useId();
   const jiraKeyId = React.useId();
   const remarksId = React.useId();
+  const tagsId = React.useId();
 
   const sortedProjects = React.useMemo(
     () => [...projects.values()].sort((a, b) => a.title.localeCompare(b.title)),
@@ -59,6 +62,7 @@ export const EditTaskModal: React.FC<Props> = ({ task, onClose, onSave }) => {
         project: project === "none" ? null : project,
         jiraKey: jiraKey.trim() || null,
         remarks: remarks.trim() || null,
+        tags: parseTags(tags),
       });
       onClose();
     } finally {
@@ -149,6 +153,18 @@ export const EditTaskModal: React.FC<Props> = ({ task, onClose, onSave }) => {
           className="tm-w-full tm-resize-y tm-px-3 tm-py-2 tm-bg-tm-bg-alt tm-border tm-border-tm-border tm-rounded tm-text-tm-text"
         />
 
+        <label htmlFor={tagsId} className="tm-block tm-text-sm tm-mt-3 tm-mb-1">
+          {t("modal.task.tags")}
+        </label>
+        <input
+          id={tagsId}
+          type="text"
+          value={tags}
+          onChange={(e) => setTags(e.target.value)}
+          placeholder={t("modal.task.tagsPlaceholder")}
+          className="tm-w-full tm-px-3 tm-py-2 tm-bg-tm-bg-alt tm-border tm-border-tm-border tm-rounded tm-text-tm-text"
+        />
+
         <div className="tm-flex tm-justify-end tm-gap-2 tm-mt-4">
           <button type="button" onClick={onClose} className="tm-px-3 tm-py-1.5 tm-text-sm">
             {t("modal.task.cancel")}
@@ -165,3 +181,7 @@ export const EditTaskModal: React.FC<Props> = ({ task, onClose, onSave }) => {
     </div>
   );
 };
+
+function parseTags(value: string): string[] {
+  return value.split(",").map((tag) => tag.trim()).filter(Boolean);
+}
