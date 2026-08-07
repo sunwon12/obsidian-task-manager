@@ -124,7 +124,7 @@ describe("KanbanCard", () => {
     expect(moveSpy).toHaveBeenCalledWith(task.id, "hold");
   });
 
-  it("Cmd+Shift+Enter is a no-op at hold", async () => {
+  it("Cmd+Shift+Enter moves a held task back to backlog", async () => {
     const { taskService, wrap } = await setup();
     const task = await taskService.createTask({ title: "held", status: "hold" });
     const moveSpy = vi.spyOn(taskService, "moveTask");
@@ -132,7 +132,7 @@ describe("KanbanCard", () => {
     await act(async () => {
       fireEvent.keyDown(getByLabelText(/held/), { key: "Enter", metaKey: true, shiftKey: true });
     });
-    expect(moveSpy).not.toHaveBeenCalled();
+    expect(moveSpy).toHaveBeenCalledWith(task.id, "backlog");
   });
 
   it("Cmd+E archives", async () => {

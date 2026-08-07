@@ -235,10 +235,11 @@ export class TaskRepository {
     }
 
     // 단순 merge: 우리 의도가 우선이지만 외부 passthrough/fieldOrder는 보존.
+    const mergedTags = task.tags?.length ? task.tags : external.task.tags;
     const merged: Task = {
       ...task,
       // 아직 태그를 갖지 않은 stale card에는 외부 Markdown에서 새로 추가한 태그를 보존한다.
-      tags: task.tags?.length ? task.tags : external.task.tags,
+      ...(mergedTags ? { tags: mergedTags } : {}),
       passthrough: external.task.passthrough,
       fieldOrder: external.task.fieldOrder,
       updatedAt: laterOf(task.updatedAt, external.task.updatedAt),

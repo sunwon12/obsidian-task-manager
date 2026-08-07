@@ -13,6 +13,7 @@ export type IsoDate = string & { readonly __brand: "IsoDate" };
 // ---------- Enums ----------
 
 export const TASK_STATUS_ORDER = [
+  "backlog",
   "hold",
   "todo",
   "doing",
@@ -31,6 +32,7 @@ export const DEFAULT_BOARD_COLUMN_DEFS: ReadonlyArray<{
   readonly id: ColumnId;
   readonly title: string;
 }> = [
+  { id: "backlog", title: "BACKLOG" },
   { id: "hold", title: "HOLD" },
   { id: "todo", title: "TODO" },
   { id: "doing", title: "DOING" },
@@ -265,6 +267,12 @@ export interface PluginSettings {
   jiraApiVersion: "2" | "3";
   /** 0이면 자동 동기화하지 않고 버튼/명령으로만 동기화한다. */
   jiraSyncIntervalMinutes: number;
+  /** YYYY-MM-DD. 비어 있으면 스프린트 자동 보관을 실행하지 않는다. */
+  sprintStartDate: string;
+  sprintLengthDays: number;
+  autoArchiveDoneAtSprintEnd: boolean;
+  /** 동일한 스프린트 경계에서 중복 보관하지 않기 위한 device-local marker. */
+  lastArchivedSprintEnd: string;
   /** UI 전용: 숨긴 kanban status 목록. task/board semantic data와 분리한다. */
   hiddenStatuses: ColumnId[];
 }
@@ -283,5 +291,9 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   jiraJql: "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC",
   jiraApiVersion: "2",
   jiraSyncIntervalMinutes: 15,
+  sprintStartDate: "",
+  sprintLengthDays: 14,
+  autoArchiveDoneAtSprintEnd: true,
+  lastArchivedSprintEnd: "",
   hiddenStatuses: [],
 };

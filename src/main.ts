@@ -146,6 +146,12 @@ export default class TaskMasterPlugin extends Plugin {
         }, settings.jiraSyncIntervalMinutes * 60_000));
       }
     }
+
+    void this.archiveCompletedSprint(taskService, settings, settingsRepo);
+    const interval = window.setInterval(() => {
+      void this.archiveCompletedSprint(taskService, settings, settingsRepo);
+    }, 60 * 60_000);
+    if (typeof this.registerInterval === "function") this.registerInterval(interval);
   }
 
   /**
@@ -185,4 +191,43 @@ export default class TaskMasterPlugin extends Plugin {
       new Notice(`Jira sync failed: ${message}`);
     }
   }
+
+  private async archiveCompletedSprint(
+    taskService: TaskService,
+    settings: PluginSettings,
+    settingsRepo: SettingsRepository,
+  ): Promise<void> {
+    if (!settings.autoArchiveDoneAtSprintEnd || !settings.sprintStartDate) return;
+    const start = parseDate(settings.sprintStartDate);
+    if (!start) return;
+    const today = new Date();
+    const utcToday = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+    const elapsedDays = Math.floor((utcToday - start) / 86_400_000);
+    const completedSprints = Math.floor(elapsedDays / settings.sprintLengthDays);
+    if (completedSprints < 1) return;
+
+    const boundary = new Date(start + completedSprints * settings.sprintLengthDays * 86_400_000)
+      .toISOString().slice(0, 10);
+    if (settings.lastArchivedSprintEnd >= boundary) return;
+
+    const completed = [...this.container?.store.getState().tasks.values() ?? []]
+      .filter((task) => task.status === "done" && task.archivedAt === null);
+    for (const task of completed) await taskService.archiveTask(task.id);
+    settings.lastArchivedSprintEnd = boundary;
+    await settingsRepo.save(settings);
+    if (completed.length > 0) new Notice(`Sprint closed: ${completed.length} DONE task(s) archived`);
+  }
+}
+
+function parseDate(value: string): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(value);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const timestamp = Date.UTC(year, month - 1, day);
+  const parsed = new Date(timestamp);
+  return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day
+    ? timestamp
+    : null;
 }

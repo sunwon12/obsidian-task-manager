@@ -136,6 +136,7 @@ describe("KanbanBoard", () => {
     const hiddenTodoChip = view.getByLabelText(/Show TODO|TODO 보이기/i);
     expect(hiddenTodoChip.className).toContain("tm-border-dashed");
     expect(container.store.getState().board.columns.map((c) => c.id)).toEqual([
+      "backlog",
       "hold",
       "todo",
       "doing",
@@ -146,7 +147,7 @@ describe("KanbanBoard", () => {
 
   it("does not hide the last visible desktop status", async () => {
     const { app, container, saveSettings } = build({
-      hiddenStatuses: ["hold", "doing", "in-review", "done"],
+      hiddenStatuses: ["backlog", "hold", "doing", "in-review", "done"],
     });
     const view = renderBoard(container, app);
 
@@ -179,7 +180,7 @@ describe("KanbanBoard", () => {
 
     const renderedColumns = Array.from(view.container.querySelectorAll("[data-column-id]"))
       .map((node) => node.getAttribute("data-column-id"));
-    expect(renderedColumns).toEqual(["hold", "todo", "doing", "in-review", "done"]);
+    expect(renderedColumns).toEqual(["backlog", "hold", "todo", "doing", "in-review", "done"]);
     expect(view.getByText("hidden todo task")).toBeTruthy();
   });
 

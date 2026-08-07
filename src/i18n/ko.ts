@@ -3,6 +3,7 @@
 const ko = {
   // Kanban
   "kanban.column.hold": "HOLD",
+  "kanban.column.backlog": "BACKLOG",
   "kanban.column.todo": "TODO",
   "kanban.column.doing": "DOING",
   "kanban.column.inReview": "IN REVIEW",
@@ -140,6 +141,13 @@ const ko = {
   "settings.jiraSync.button": "Jira 동기화",
   "settings.jiraSync.syncing": "동기화 중…",
   "settings.jiraSync.success": "{created}개 추가, {updated}개 갱신",
+  "settings.sprint.title": "스프린트",
+  "settings.sprintStart.title": "스프린트 시작일",
+  "settings.sprintStart.desc": "이 날짜부터 14일 단위로 스프린트를 계산합니다. 비워두면 자동 보관하지 않습니다.",
+  "settings.sprintLength.title": "스프린트 길이(일)",
+  "settings.sprintLength.desc": "기본값은 14일입니다.",
+  "settings.sprintArchive.title": "스프린트 종료 시 DONE 자동 보관",
+  "settings.sprintArchive.desc": "스프린트 경계가 지나면 완료 카드를 보관함으로 옮겨 현재 보드에서 제거합니다.",
   "settings.locale.title": "언어",
   "settings.locale.desc": "UI 언어. 'auto'는 Obsidian locale을 따름.",
   "settings.requiresReload": "변경 사항은 Obsidian reload 후 적용됩니다.",

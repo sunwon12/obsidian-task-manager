@@ -86,6 +86,6 @@ describe("SettingsRepository", () => {
     });
     const repo = new SettingsRepository(plugin as never);
     const result = await repo.load();
-    expect(result.hiddenStatuses).toEqual(["hold", "todo", "doing", "in-review"]);
+    expect(result.hiddenStatuses).toEqual(["hold", "todo", "doing", "in-review", "done"]);
   });
 });

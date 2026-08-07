@@ -5,6 +5,7 @@ import type ko from "./ko";
 const en: Record<keyof typeof ko, string> = {
   // Kanban
   "kanban.column.hold": "HOLD",
+  "kanban.column.backlog": "BACKLOG",
   "kanban.column.todo": "TODO",
   "kanban.column.doing": "DOING",
   "kanban.column.inReview": "IN REVIEW",
@@ -142,6 +143,13 @@ const en: Record<keyof typeof ko, string> = {
   "settings.jiraSync.button": "Sync Jira",
   "settings.jiraSync.syncing": "Syncing…",
   "settings.jiraSync.success": "{created} added, {updated} updated",
+  "settings.sprint.title": "Sprint",
+  "settings.sprintStart.title": "Sprint start date",
+  "settings.sprintStart.desc": "Calculates 14-day sprints from this date. Leave empty to disable automatic archiving.",
+  "settings.sprintLength.title": "Sprint length (days)",
+  "settings.sprintLength.desc": "Default: 14 days.",
+  "settings.sprintArchive.title": "Archive DONE at sprint end",
+  "settings.sprintArchive.desc": "Moves completed cards to Archive once a sprint boundary has passed.",
   "settings.locale.title": "Language",
   "settings.locale.desc": "UI language. 'auto' follows Obsidian locale.",
   "settings.requiresReload": "Changes take effect after reloading Obsidian.",

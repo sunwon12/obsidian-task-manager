@@ -12,6 +12,11 @@ interface StatusColorTokens {
 }
 
 const STATUS_COLORS: Record<ColumnId, StatusColorTokens> = {
+  backlog: {
+    solid: "#64748b", border: "#cbd5e1", borderMuted: "rgba(100, 116, 139, 0.30)",
+    text: "#475569", background: "rgba(100, 116, 139, 0.11)", backgroundMuted: "rgba(100, 116, 139, 0.05)",
+    ring: "rgba(100, 116, 139, 0.20)", badgeBackground: "rgba(100, 116, 139, 0.16)",
+  },
   hold: {
     solid: "#94a3b8",
     border: "#cbd5e1",

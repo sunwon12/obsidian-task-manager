@@ -54,7 +54,7 @@ describe("BoardRepository.rebuildFromTasks", () => {
       makeTask(newId("task"), { status: "done" }),
     ];
     const board = repo.rebuildFromTasks(tasks);
-    expect(board.columns.map((c) => c.id)).toEqual(["hold", "todo", "doing", "in-review", "done"]);
+    expect(board.columns.map((c) => c.id)).toEqual(["backlog", "hold", "todo", "doing", "in-review", "done"]);
     expect(taskIds(board, "hold")).toHaveLength(1);
     expect(taskIds(board, "todo")).toHaveLength(1);
     expect(taskIds(board, "doing")).toHaveLength(1);
