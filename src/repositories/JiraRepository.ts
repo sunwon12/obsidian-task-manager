@@ -27,7 +27,14 @@ export class JiraRepository {
     const response = await requestUrl({
       url: endpoint,
       method: "POST",
-      headers: { Authorization: authorization, "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        Authorization: authorization,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        // Obsidian의 requestUrl은 Electron session에 남은 쿠키를 함께 보낼 수 있어,
+        // Basic/Bearer 인증뿐이어도 Atlassian이 브라우저 세션으로 오인해 XSRF 403을 낼 수 있다.
+        "X-Atlassian-Token": "no-check",
+      },
       body: JSON.stringify({ jql: settings.jiraJql.trim(), fields: ["summary", "status"], maxResults: 100 }),
       throw: false,
     });
