@@ -11,6 +11,7 @@ coverage/
 # Editor
 .vscode/
 .idea/
+.obsidian/
 
 # OS
 .DS_Store
