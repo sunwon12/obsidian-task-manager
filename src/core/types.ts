@@ -221,7 +221,7 @@ export type TaskMasterEvent =
 
 // ---------- Diagnostics ----------
 
-export type DiagnosticKind = "parse" | "flush" | "conflict" | "boot";
+export type DiagnosticKind = "parse" | "flush" | "conflict" | "boot" | "sync";
 
 export interface DiagnosticEntry {
   ts: IsoDateTime;
@@ -246,6 +246,19 @@ export interface PluginSettings {
   locale: "auto" | "ko" | "en";
   /** 외부 issue tracker base URL. 끝의 "/"는 자동 보정. 빈 문자열이면 link 비활성. */
   jiraBaseUrl: string;
+  /** Jira REST API 서버의 origin. 예: https://jira.example.com */
+  jiraApiUrl: string;
+  /** Cloud는 email + API token(Basic), Data Center는 PAT(Bearer)을 선택한다. */
+  jiraAuthType: "basic" | "bearer";
+  jiraEmail: string;
+  /** Obsidian plugin data에만 저장하며 task Markdown이나 Vault에는 쓰지 않는다. */
+  jiraApiToken: string;
+  /** 내 이슈 범위를 제한하는 Jira Query Language. */
+  jiraJql: string;
+  /** Jira REST API major version. Cloud는 3, Server/Data Center는 보통 2. */
+  jiraApiVersion: "2" | "3";
+  /** 0이면 자동 동기화하지 않고 버튼/명령으로만 동기화한다. */
+  jiraSyncIntervalMinutes: number;
   /** UI 전용: 숨긴 kanban status 목록. task/board semantic data와 분리한다. */
   hiddenStatuses: ColumnId[];
 }
@@ -257,5 +270,12 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   confirmOnDelete: true,
   locale: "auto",
   jiraBaseUrl: "",
+  jiraApiUrl: "",
+  jiraAuthType: "bearer",
+  jiraEmail: "",
+  jiraApiToken: "",
+  jiraJql: "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC",
+  jiraApiVersion: "2",
+  jiraSyncIntervalMinutes: 15,
   hiddenStatuses: [],
 };

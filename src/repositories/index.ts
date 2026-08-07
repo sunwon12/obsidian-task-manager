@@ -4,3 +4,4 @@ export { TaskRepository } from "./TaskRepository";
 export { BoardRepository } from "./BoardRepository";
 export { MeetingRepository } from "./MeetingRepository";
 export { ProjectRepository } from "./ProjectRepository";
+export { JiraRepository, type JiraIssue } from "./JiraRepository";

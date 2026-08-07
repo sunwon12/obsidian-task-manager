@@ -6,12 +6,13 @@ import { t } from "../../i18n";
 import type { DiagnosticEntry, DiagnosticKind } from "../../core/types";
 
 const KIND_LABEL: Record<DiagnosticKind,
-  "settings.diagnostics.kindParse" | "settings.diagnostics.kindFlush" | "settings.diagnostics.kindConflict" | "settings.diagnostics.kindBoot"
+  "settings.diagnostics.kindParse" | "settings.diagnostics.kindFlush" | "settings.diagnostics.kindConflict" | "settings.diagnostics.kindBoot" | "settings.diagnostics.kindSync"
 > = {
   parse: "settings.diagnostics.kindParse",
   flush: "settings.diagnostics.kindFlush",
   conflict: "settings.diagnostics.kindConflict",
   boot: "settings.diagnostics.kindBoot",
+  sync: "settings.diagnostics.kindSync",
 };
 
 const KIND_COLOR: Record<DiagnosticKind, string> = {
@@ -19,6 +20,7 @@ const KIND_COLOR: Record<DiagnosticKind, string> = {
   flush: "tm-text-tm-error",
   conflict: "tm-text-tm-warning",
   boot: "tm-text-tm-muted",
+  sync: "tm-text-tm-error",
 };
 
 export const DiagnosticsPane: React.FC = () => {

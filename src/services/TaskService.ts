@@ -11,6 +11,7 @@ import type {
   CreateTaskInput, Priority, ProjectId, Task, TaskId, TaskStatus, UpdateTaskInput,
 } from "../core/types";
 import type { BoardService } from "./BoardService";
+import type { JiraIssue } from "../repositories/JiraRepository";
 
 export class TaskService {
   constructor(
@@ -157,6 +158,19 @@ export class TaskService {
     this.events.emit({ type: "task:deleted", taskId });
   }
 
+  /** Jira issue key를 identity로 하여 기존 카드 갱신 또는 새 카드 생성. archive된 카드는 되살리지 않는다. */
+  async upsertJiraIssue(issue: JiraIssue): Promise<"created" | "updated" | "skipped"> {
+    const existing = [...this.store.getState().tasks.values()]
+      .find((task) => task.jiraKey === issue.key);
+    if (!existing) {
+      await this.createTask({ title: issue.summary, status: jiraStatusToTaskStatus(issue.statusName), jiraKey: issue.key });
+      return "created";
+    }
+    if (existing.archivedAt) return "skipped";
+    await this.updateTask(existing.id, { title: issue.summary, status: jiraStatusToTaskStatus(issue.statusName) });
+    return "updated";
+  }
+
   /** UI에서 본문 보기 위해 path를 노출. open은 UI가 obsidian으로 직접. */
   getTaskPath(taskId: TaskId): string | null {
     return this.store.getState().tasks.get(taskId)?.path ?? null;
@@ -167,6 +181,15 @@ export class TaskService {
     if (!t) throw new Error(`Task not found: ${id}`);
     return t;
   }
+}
+
+export function jiraStatusToTaskStatus(statusName: string): TaskStatus {
+  const normalized = statusName.trim().toLocaleLowerCase();
+  if (/(done|closed|resolved|complete)/u.test(normalized)) return "done";
+  if (/(review|qa|test)/u.test(normalized)) return "in-review";
+  if (/(progress|develop|implement|working)/u.test(normalized)) return "doing";
+  if (/(hold|block)/u.test(normalized)) return "hold";
+  return "todo";
 }
 
 function summarizeBody(body: string): string {

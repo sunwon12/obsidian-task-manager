@@ -4,3 +4,4 @@ export { BoardService } from "./BoardService";
 export { ProjectService } from "./ProjectService";
 export { ProjectMemoService } from "./ProjectMemoService";
 export { MeetingService } from "./MeetingService";
+export { JiraSyncService, type JiraSyncResult } from "./JiraSyncService";

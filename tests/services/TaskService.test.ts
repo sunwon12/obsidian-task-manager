@@ -128,6 +128,20 @@ describe("TaskService", () => {
     expect(store.getState().tasks.get(task.id)?.jiraKey).toBeNull();
   });
 
+  it("upsertJiraIssue creates once and then updates the matching Jira card", async () => {
+    const { tasks, store } = build();
+    const issue = { key: "PROJ-42", summary: "Initial summary", statusName: "In Progress" };
+    await expect(tasks.upsertJiraIssue(issue)).resolves.toBe("created");
+    const created = [...store.getState().tasks.values()][0];
+    expect(created?.jiraKey).toBe("PROJ-42");
+    expect(created?.status).toBe("doing");
+
+    await expect(tasks.upsertJiraIssue({ ...issue, summary: "Updated summary", statusName: "Done" }))
+      .resolves.toBe("updated");
+    expect(store.getState().tasks.get(created!.id)?.title).toBe("Updated summary");
+    expect(store.getState().tasks.get(created!.id)?.status).toBe("done");
+  });
+
   it("createTask stores remarks when provided", async () => {
     const { tasks, store, app } = build();
     const task = await tasks.createTask({ title: "x", remarks: "리뷰 대기" });

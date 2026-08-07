@@ -14,10 +14,10 @@ import { initI18n } from "./i18n";
 import { TaskMasterSettingTab } from "./ui/settings/TaskMasterSettingTab";
 import {
   BoardRepository, MeetingRepository, ProjectRepository,
-  SettingsRepository, TaskRepository,
+  SettingsRepository, TaskRepository, JiraRepository,
 } from "./repositories";
 import {
-  BoardService, MeetingService, ProjectMemoService, ProjectService, TaskService,
+  BoardService, MeetingService, ProjectMemoService, ProjectService, TaskService, JiraSyncService,
 } from "./services";
 import { IndexService } from "./integration/IndexService";
 import { createTaskMasterStore, type TaskMasterStore } from "./store/taskMasterStore";
@@ -34,6 +34,7 @@ export interface ServiceContainer {
   projectService: ProjectService;
   projectMemoService: ProjectMemoService;
   meetingService: MeetingService;
+  jiraSyncService?: JiraSyncService;
   events: EventBus;
   diagnostics: DiagnosticsLog;
   settings: PluginSettings;
@@ -77,6 +78,7 @@ export default class TaskMasterPlugin extends Plugin {
     const projectService = new ProjectService(projectRepo, store);
     const projectMemoService = new ProjectMemoService(projectRepo, store);
     const meetingService = new MeetingService(meetingRepo, store);
+    const jiraSyncService = new JiraSyncService(new JiraRepository(), taskService, diagnostics);
 
     const indexService = new IndexService(
       this.app, this, store,
@@ -90,7 +92,7 @@ export default class TaskMasterPlugin extends Plugin {
     this.meetingRepo = meetingRepo;
 
     this.container = {
-      store, taskService, boardService, projectService, projectMemoService, meetingService,
+      store, taskService, boardService, projectService, projectMemoService, meetingService, jiraSyncService,
       events, diagnostics, settings,
       saveSettings: async (next) => {
         Object.assign(settings, next);
@@ -127,9 +129,23 @@ export default class TaskMasterPlugin extends Plugin {
       name: "Open TaskMaster",
       callback: () => void this.activateView(),
     });
+    this.addCommand({
+      id: "sync-jira-issues",
+      name: "Sync Jira issues",
+      callback: () => void this.syncJira(jiraSyncService, settings),
+    });
 
     // T-604: Settings tab 등록
     this.addSettingTab(new TaskMasterSettingTab(this.app, this, this.container));
+
+    if (settings.jiraApiUrl.trim() && settings.jiraApiToken.trim()) {
+      void this.syncJira(jiraSyncService, settings);
+      if (settings.jiraSyncIntervalMinutes > 0) {
+        this.registerInterval(window.setInterval(() => {
+          void this.syncJira(jiraSyncService, settings);
+        }, settings.jiraSyncIntervalMinutes * 60_000));
+      }
+    }
   }
 
   /**
@@ -158,5 +174,15 @@ export default class TaskMasterPlugin extends Plugin {
       await leaf.setViewState({ type: VIEW_TYPE_TASKMASTER, active: true });
     }
     workspace.revealLeaf(leaf);
+  }
+
+  private async syncJira(service: JiraSyncService, settings: PluginSettings): Promise<void> {
+    try {
+      const result = await service.sync(settings);
+      new Notice(`Jira synced: ${result.created} added, ${result.updated} updated`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      new Notice(`Jira sync failed: ${message}`);
+    }
   }
 }

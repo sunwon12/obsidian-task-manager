@@ -107,6 +107,9 @@
 .tm-w-2 {
   width: 0.5rem;
 }
+.tm-w-24 {
+  width: 6rem;
+}
 .tm-w-3\.5 {
   width: 0.875rem;
 }
@@ -124,6 +127,9 @@
 }
 .tm-w-96 {
   width: 24rem;
+}
+.tm-w-\[32rem\] {
+  width: 32rem;
 }
 .tm-w-full {
   width: 100%;
@@ -355,6 +361,9 @@
 }
 .tm-pt-2 {
   padding-top: 0.5rem;
+}
+.tm-pt-5 {
+  padding-top: 1.25rem;
 }
 .tm-text-left {
   text-align: left;

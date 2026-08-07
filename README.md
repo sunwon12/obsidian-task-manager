@@ -102,6 +102,18 @@ npm run build
 - Use the card ⋮ menu → Edit to update title, priority, project, Jira key, or remarks without leaving the board.
 - The board reflects frontmatter changes within 250 ms.
 
+### Sync Jira issues
+
+TaskMaster can keep Jira work alongside local tasks without creating a second card by hand.
+
+1. In **Settings → Community plugins → TaskMaster**, enter the Jira API URL, authentication, API token, and a JQL query.
+2. Click **Sync Jira**, or use the command palette command **Sync Jira issues**.
+3. Matching issues are created once by Jira key and then updated in place on later syncs. Local tasks are never sent to Jira.
+
+For Jira Cloud use **Email + API token** and REST API version 3. For Jira Server/Data Center use a personal access token with **Bearer token** and REST API version 2. The default status mapping is: `Done/Closed/Resolved → DONE`, `Review/QA/Test → IN REVIEW`, `In Progress/Development → DOING`, and `Blocked/Hold → HOLD`; all other statuses map to `TODO`.
+
+The API token is stored only in Obsidian's device-local plugin data. Do not commit `.obsidian/plugins/taskmaster-plugin/data.json`.
+
 ### Archive vs Delete
 
 - **Archive** (`Cmd/Ctrl+E`; mobile also has a ⋮ menu): moves the file to `TaskMaster/Archive/`, removes from the board.

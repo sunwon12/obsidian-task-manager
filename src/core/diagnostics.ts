@@ -50,6 +50,8 @@ export class DiagnosticsLog {
         return `TaskMaster: failed to save changes`;
       case "conflict":
         return `TaskMaster: conflict detected for ${entry.entityId ?? "entity"}`;
+      case "sync":
+        return "TaskMaster: Jira sync failed";
       default:
         return `TaskMaster: ${entry.message}`;
     }
