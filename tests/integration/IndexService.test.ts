@@ -131,6 +131,45 @@ describe("IndexService event handlers", () => {
     expect(store.getState().tasks.get(t.id)?.path).toBe(newPath);
   });
 
+  it("handleCreate indexes a task file written directly to disk without a reload", async () => {
+    const { app, idx, store } = build();
+    await idx.bootstrap();
+
+    // 플러그인 API를 거치지 않고 디스크에 직접 파일을 쓴 상황을 흉내낸다
+    // (예: 외부 스크립트나 git으로 생성된 task 파일). metadataCache는 아직
+    // frontmatter를 파싱하지 않은 상태이므로 "create" 이벤트만 발생한다.
+    const raw = [
+      "---",
+      "schemaVersion: 1",
+      "id: task_01HX7SM2J6K4XQ7EV6C8T92PPW",
+      "type: task",
+      "status: todo",
+      "project:",
+      "priority:",
+      "createdAt: 2026-08-08T00:00:00.000Z",
+      "updatedAt: 2026-08-08T00:00:00.000Z",
+      "---",
+      "",
+      "# 외부에서 만든 task",
+      "",
+    ].join("\n");
+    const file = await app.vault.create(`${TASKS}/external.md`, raw);
+
+    await idx.handleCreateForTest(file as never);
+
+    expect(store.getState().tasks.get("task_01HX7SM2J6K4XQ7EV6C8T92PPW" as TaskId)?.title)
+      .toBe("외부에서 만든 task");
+    expect(taskIds(store.getState().board, "todo")).toContain("task_01HX7SM2J6K4XQ7EV6C8T92PPW");
+  });
+
+  it("handleCreate ignores non-markdown or non-managed files", async () => {
+    const { app, idx, store } = build();
+    await idx.bootstrap();
+    const file = await app.vault.create(`${TASKS}/not-a-task.md`, "# 그냥 메모\n\n본문");
+    await idx.handleCreateForTest(file as never);
+    expect(store.getState().tasks.size).toBe(0);
+  });
+
   it("ignores files outside dataRoot", async () => {
     const { app, idx, store } = build();
     await idx.bootstrap();

@@ -70,6 +70,11 @@ export class IndexService {
 
   private registerVaultListeners(): void {
     this.register(
+      this.app.vault.on("create", (file: TAbstractFile) => {
+        void this.handleCreate(file);
+      }),
+    );
+    this.register(
       this.app.metadataCache.on("changed", (file: TFile) => {
         void this.handleMetaChanged(file);
       }),
@@ -91,6 +96,9 @@ export class IndexService {
   }
 
   /** Test entrypoint for vault event handlers. */
+  async handleCreateForTest(file: TAbstractFile): Promise<void> {
+    return this.handleCreate(file);
+  }
   async handleMetaChangedForTest(file: TFile): Promise<void> {
     return this.handleMetaChanged(file);
   }
@@ -99,6 +107,24 @@ export class IndexService {
   }
   handleRenameForTest(file: TAbstractFile, oldPath: string): void {
     this.handleRename(file, oldPath);
+  }
+
+  /**
+   * plugin 외부(디스크에 직접 write 등)에서 생성된 파일은 metadataCache가 아직
+   * frontmatter를 파싱하기 전에 "create"가 먼저 발생할 수 있어, cache 대신
+   * raw 파싱 결과로 type을 직접 판별한다.
+   */
+  private async handleCreate(file: TAbstractFile): Promise<void> {
+    if (!(file instanceof TFile)) return;
+    if (!isUnderFolder(file.path, this.dataRoot)) return;
+    const raw = await this.app.vault.cachedRead(file);
+    if (parseTask(raw)) {
+      await this.handleTaskMeta(file);
+    } else if (parseMeeting(raw)) {
+      await this.handleMeetingMeta(file);
+    } else if (parseProject(raw)) {
+      await this.handleProjectMeta(file);
+    }
   }
 
   private async handleMetaChanged(file: TFile): Promise<void> {
