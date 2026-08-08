@@ -200,7 +200,10 @@ export default class TaskMasterPlugin extends Plugin {
       new Notice(`Jira synced: ${result.created} added, ${result.updated} updated`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      new Notice(`Jira sync failed: ${message}`);
+      // Notice 는 몇 초 뒤 사라져 증거가 안 남는다. console.error 로도 남겨
+      // 외부 계측(smart-split console 태핑)이 원문을 영구 기록하게 한다.
+      console.error("TaskMaster Jira sync failed", err);
+      new Notice(`Jira sync failed: ${message}`, 30_000);
     }
   }
 

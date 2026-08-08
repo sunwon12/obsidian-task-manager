@@ -8,6 +8,12 @@
   color: var(--text-normal);
 }
 
+/* 설정 탭: 위 overflow:hidden 이 옵시디언 설정의 세로 스크롤을 죽이므로 복원.
+   (containerEl = .vertical-tab-content 자체가 스크롤 컨테이너다) */
+.taskmaster-root.taskmaster-settings {
+  overflow-y: auto;
+}
+
 /* preflight 비활성화 보완: ul/li 기본 스타일 reset (host CSS는 그대로). */
 .taskmaster-root ul,
 .taskmaster-root ol {

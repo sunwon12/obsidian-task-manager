@@ -20,7 +20,9 @@ export class TaskMasterSettingTab extends PluginSettingTab {
 
   override display(): void {
     this.containerEl.empty();
-    this.containerEl.addClass("taskmaster-root");
+    // taskmaster-root 의 board 용 overflow:hidden 이 옵시디언 설정 탭의
+    // 스크롤 컨테이너를 죽인다 — 설정 전용 modifier 로 스크롤을 복원한다.
+    this.containerEl.addClass("taskmaster-root", "taskmaster-settings");
     this.root = createRoot(this.containerEl);
     this.root.render(
       React.createElement(TaskMasterProvider, {
