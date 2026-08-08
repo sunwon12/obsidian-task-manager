@@ -132,6 +132,33 @@ describe("TaskRepository.findAll", () => {
     expect(tasks[0]!.archivedAt).toBe(archived);
   });
 
+  it("includes files missing from metadataCache — raw-parse fallback (2026-08-08 boot race)", async () => {
+    // 실사고: CLI 로 디스크에 직접 생성된 task 파일이 부팅 시점 metadataCache 에 없어서
+    // findAll 이 조용히 skip → 보드가 매 리로드마다 0개. 캐시 미존재 = "task 아님"이
+    // 아니라 "아직 모름"이므로 raw 파싱으로 판별해야 한다.
+    const app = new App();
+    const id = newId("task");
+    const short = "task_" + ulidOf(id).slice(0, 8);
+    const path = `${TASKS}/외부생성 - ${short}.md`;
+    await app.vault.create(path, makeRaw(id)); // metadataCache __set 은 의도적으로 생략
+    const { repo } = makeRepo(app);
+    const tasks = await repo.findAll();
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]!.id).toBe(id);
+  });
+
+  it("still skips cached files whose cached type is not task (pre-filter kept)", async () => {
+    const app = new App();
+    const path = `${TASKS}/회의록아님 - note.md`;
+    await app.vault.create(path, "---\ntype: meeting\n---\n\n# 노트\n");
+    (app.metadataCache as unknown as { __set(p: string, fm: Record<string, unknown>): void }).__set(
+      path,
+      { type: "meeting" },
+    );
+    const { repo } = makeRepo(app);
+    expect(await repo.findAll()).toHaveLength(0);
+  });
+
   it("skips files outside the configured folders", async () => {
     const app = new App();
     const id = newId("task");

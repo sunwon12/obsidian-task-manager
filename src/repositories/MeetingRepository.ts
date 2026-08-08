@@ -35,8 +35,10 @@ export class MeetingRepository {
 
     const meetings: Meeting[] = [];
     for (const file of files) {
-      const cache = this.app.metadataCache.getFileCache(file);
-      if (cache?.frontmatter?.["type"] !== "meeting") continue;
+      // TaskRepository.findAll과 동일: 캐시 미존재 파일을 skip하면 외부 생성
+      // 파일이 세션 내내 유실된다. 캐시가 있을 때만 사전필터로 쓴다.
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      if (fm && fm["type"] !== "meeting") continue;
 
       try {
         const raw = await this.app.vault.cachedRead(file);
