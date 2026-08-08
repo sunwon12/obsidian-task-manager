@@ -253,4 +253,23 @@ describe("serializeTask", () => {
     const out = serializeTask(task, "그냥 본문");
     expect(out).toMatch(/# Fresh title\n\n그냥 본문/);
   });
+
+  it("estimateMd/actualMd/due 는 왕복 보존된다 (견적 회고 자산 필드)", () => {
+    const task = makeTask({ estimateMd: 3.5, actualMd: 2, due: "2026-08-09" });
+    const out = serializeTask(task, "본문");
+    expect(out).toContain("estimateMd: 3.5");
+    expect(out).toContain("actualMd: 2");
+    expect(out).toContain("due: 2026-08-09");
+    const back = parseTask(out)!;
+    expect(back.task.estimateMd).toBe(3.5);
+    expect(back.task.actualMd).toBe(2);
+    expect(back.task.due).toBe("2026-08-09");
+  });
+
+  it("estimateMd/actualMd/due 가 null 이면 frontmatter 에 나타나지 않는다", () => {
+    const out = serializeTask(makeTask({}), "본문");
+    expect(out).not.toContain("estimateMd");
+    expect(out).not.toContain("actualMd");
+    expect(out).not.toContain("due:");
+  });
 });

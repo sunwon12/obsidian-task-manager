@@ -43,6 +43,15 @@ export function parseTask(raw: string): ParsedTask | null {
       remarks: typeof m["remarks"] === "string" && m["remarks"].trim().length > 0
         ? m["remarks"].trim()
         : null,
+      estimateMd: typeof m["estimateMd"] === "number" && Number.isFinite(m["estimateMd"])
+        ? m["estimateMd"]
+        : null,
+      actualMd: typeof m["actualMd"] === "number" && Number.isFinite(m["actualMd"])
+        ? m["actualMd"]
+        : null,
+      due: typeof m["due"] === "string" && m["due"].trim().length > 0
+        ? m["due"].trim()
+        : null,
       tags: normalizeTags(m["tags"]),
       bodySummary: extractBodySummary(body),
       createdAt: typeof m["createdAt"] === "string"
@@ -74,6 +83,9 @@ export function serializeTask(task: Task, body: string): string {
   };
   if (task.jiraKey) doc.jiraKey = task.jiraKey;
   if (task.remarks) doc.remarks = task.remarks;
+  if (task.estimateMd != null) doc.estimateMd = task.estimateMd;
+  if (task.actualMd != null) doc.actualMd = task.actualMd;
+  if (task.due) doc.due = task.due;
   if (task.tags?.length) doc.tags = normalizeTags(task.tags);
   if (task.archivedAt) doc.archivedAt = task.archivedAt;
 

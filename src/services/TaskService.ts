@@ -26,6 +26,9 @@ export class TaskService {
     const id = newId("task") as TaskId;
     const jiraKey = (input.jiraKey ?? "").trim() || null;
     const remarks = (input.remarks ?? "").trim() || null;
+    const estimateMd = input.estimateMd ?? null;
+    const actualMd = input.actualMd ?? null;
+    const due = (input.due ?? "").trim() || null;
     const tags = normalizeTags(input.tags ?? []);
     const draft: Task = {
       schemaVersion: SCHEMA_VERSION,
@@ -37,6 +40,9 @@ export class TaskService {
       priority: input.priority ?? null,
       jiraKey,
       remarks,
+      estimateMd,
+      actualMd,
+      due,
       tags,
       bodySummary: summarizeBody(input.body ?? ""),
       createdAt: nowIso(),
@@ -45,7 +51,9 @@ export class TaskService {
       passthrough: {},
       fieldOrder: [
         "schemaVersion", "id", "type", "status", "project",
-        "priority", ...(jiraKey ? ["jiraKey"] : []), ...(remarks ? ["remarks"] : []), ...(tags.length ? ["tags"] : []),
+        "priority", ...(jiraKey ? ["jiraKey"] : []), ...(remarks ? ["remarks"] : []),
+        ...(estimateMd != null ? ["estimateMd"] : []), ...(actualMd != null ? ["actualMd"] : []),
+        ...(due ? ["due"] : []), ...(tags.length ? ["tags"] : []),
         "createdAt", "updatedAt",
       ],
       knownMtime: 0,
@@ -124,6 +132,21 @@ export class TaskService {
       if (remarks !== next.remarks) next = { ...next, remarks };
     }
 
+    if (hasOwn(input, "estimateMd")) {
+      const estimateMd = input.estimateMd ?? null;
+      if (estimateMd !== (next.estimateMd ?? null)) next = { ...next, estimateMd };
+    }
+
+    if (hasOwn(input, "actualMd")) {
+      const actualMd = input.actualMd ?? null;
+      if (actualMd !== (next.actualMd ?? null)) next = { ...next, actualMd };
+    }
+
+    if (hasOwn(input, "due")) {
+      const due = (input.due ?? "").trim() || null;
+      if (due !== (next.due ?? null)) next = { ...next, due };
+    }
+
     if (hasOwn(input, "tags")) {
       const tags = normalizeTags(input.tags ?? []);
       if (tags.join("\u0000") !== (next.tags ?? []).join("\u0000")) next = { ...next, tags };
@@ -169,13 +192,35 @@ export class TaskService {
   async upsertJiraIssue(issue: JiraIssue): Promise<"created" | "updated" | "skipped"> {
     const existing = [...this.store.getState().tasks.values()]
       .find((task) => task.jiraKey === issue.key);
+    const fields = {
+      title: issue.summary,
+      status: jiraStatusToTaskStatus(issue.statusName),
+      estimateMd: issue.estimateMd,
+      actualMd: issue.actualMd,
+      due: issue.dueDate,
+    };
     if (!existing) {
-      await this.createTask({ title: issue.summary, status: jiraStatusToTaskStatus(issue.statusName), jiraKey: issue.key });
+      await this.createTask({ ...fields, jiraKey: issue.key, body: issue.description });
       return "created";
     }
     if (existing.archivedAt) return "skipped";
-    await this.updateTask(existing.id, { title: issue.summary, status: jiraStatusToTaskStatus(issue.statusName) });
+    const updated = await this.updateTask(existing.id, fields);
+    await this.backfillJiraBody(updated, issue.description);
     return "updated";
+  }
+
+  /**
+   * Jira description 본문 백필. 사용자가 본문을 이미 썼을 수 있으므로
+   * "제목 heading 외에 아무것도 없는" 태스크에만 1회 채운다 — 동기화가
+   * 사용자의 메모를 덮어쓰는 일은 없어야 한다.
+   */
+  private async backfillJiraBody(task: Task, description: string): Promise<void> {
+    if (!description.trim()) return;
+    const body = await this.tasks.readBody(task.id);
+    const withoutTitle = body.replace(/^#\s+.+$/mu, "").trim();
+    if (withoutTitle.length > 0) return;
+    const filled = await this.tasks.writeBody(task, description);
+    this.store.getState().upsertTask(filled);
   }
 
   /** UI에서 본문 보기 위해 path를 노출. open은 UI가 obsidian으로 직접. */

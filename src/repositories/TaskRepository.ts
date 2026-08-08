@@ -101,6 +101,17 @@ export class TaskRepository {
     return match ? (match[1] ?? "") : raw;
   }
 
+  /**
+   * body 전체 교체 (frontmatter 는 task 상태로 재직렬화).
+   * Jira description 백필처럼 "본문만" 바꿀 때 사용.
+   */
+  async writeBody(task: Task, body: string): Promise<Task> {
+    const file = this.fileOf(task.id);
+    const next = serializeTask(task, body);
+    await this.app.vault.modify(file, next);
+    return { ...task, knownMtime: file.stat.mtime };
+  }
+
   // ---------- Create (T-203) ----------
 
   async create(task: Task, body: string): Promise<Task> {

@@ -138,7 +138,10 @@ describe("TaskService", () => {
 
   it("upsertJiraIssue creates once and then updates the matching Jira card", async () => {
     const { tasks, store } = build();
-    const issue = { key: "PROJ-42", summary: "Initial summary", statusName: "In Progress" };
+    const issue = {
+      key: "PROJ-42", summary: "Initial summary", statusName: "In Progress",
+      description: "", estimateMd: null, actualMd: null, dueDate: null,
+    };
     await expect(tasks.upsertJiraIssue(issue)).resolves.toBe("created");
     const created = [...store.getState().tasks.values()][0];
     expect(created?.jiraKey).toBe("PROJ-42");
@@ -148,6 +151,48 @@ describe("TaskService", () => {
       .resolves.toBe("updated");
     expect(store.getState().tasks.get(created!.id)?.title).toBe("Updated summary");
     expect(store.getState().tasks.get(created!.id)?.status).toBe("done");
+  });
+
+  it("upsertJiraIssue carries description/estimateMd/actualMd/due into the task file", async () => {
+    // 목적(2026-08-08 사용자 요구): 예상 MD vs 실제 MD 가 로컬 파일에 쌓여야
+    // "이전엔 얼마 걸렸는데 지금은 얼마"라는 견적 회고 자산이 된다.
+    const { tasks, store, app } = build();
+    await tasks.upsertJiraIssue({
+      key: "BDCC-1", summary: "견적 자산", statusName: "In Progress",
+      description: "## 배경\n\n갤러리 편성 재구성", estimateMd: 3, actualMd: null, dueDate: "2026-08-09",
+    });
+    const created = [...store.getState().tasks.values()].find((t) => t.jiraKey === "BDCC-1")!;
+    expect(created.estimateMd).toBe(3);
+    expect(created.actualMd).toBeNull();
+    expect(created.due).toBe("2026-08-09");
+    const raw = await app.vault.read(app.vault.getAbstractFileByPath(created.path) as never);
+    expect(raw).toContain("estimateMd: 3");
+    expect(raw).toContain("due: 2026-08-09");
+    expect(raw).toContain("갤러리 편성 재구성");
+  });
+
+  it("upsertJiraIssue backfills an empty body but never overwrites user notes", async () => {
+    const { tasks, store, app } = build();
+    const issue = {
+      key: "BDCC-2", summary: "본문 백필", statusName: "To Do",
+      description: "", estimateMd: null, actualMd: null, dueDate: null,
+    };
+    await tasks.upsertJiraIssue(issue); // description 없이 생성 → 본문 비어 있음
+
+    // 다음 동기화에서 description 이 생기면 빈 본문을 채운다
+    await tasks.upsertJiraIssue({ ...issue, description: "지라에서 온 본문" });
+    const task = [...store.getState().tasks.values()].find((t) => t.jiraKey === "BDCC-2")!;
+    const raw1 = await app.vault.read(app.vault.getAbstractFileByPath(task.path) as never);
+    expect(raw1).toContain("지라에서 온 본문");
+
+    // 사용자가 본문을 쓴 뒤에는 어떤 동기화도 본문을 덮지 않는다
+    const file = app.vault.getAbstractFileByPath(task.path) as never;
+    const withUserNote = raw1.replace("지라에서 온 본문", "내가 직접 쓴 메모");
+    await app.vault.modify(file, withUserNote);
+    await tasks.upsertJiraIssue({ ...issue, description: "지라가 다시 보낸 본문" });
+    const raw2 = await app.vault.read(file);
+    expect(raw2).toContain("내가 직접 쓴 메모");
+    expect(raw2).not.toContain("지라가 다시 보낸 본문");
   });
 
   it("createTask stores remarks when provided", async () => {

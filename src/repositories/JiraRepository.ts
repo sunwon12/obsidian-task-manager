@@ -1,14 +1,23 @@
 import { request as httpsRequest } from "https";
+import { adfToMarkdown } from "../core/adf";
 import type { PluginSettings } from "../core/types";
 
 export interface JiraIssue {
   key: string;
   summary: string;
   statusName: string;
+  /** 이슈 본문(ADF → Markdown 변환). 없으면 "". */
+  description: string;
+  /** 견적 MD (설정에 필드 id 없으면 null). */
+  estimateMd: number | null;
+  /** 실제 MD (설정에 필드 id 없으면 null). */
+  actualMd: number | null;
+  /** 마감일 YYYY-MM-DD. */
+  dueDate: string | null;
 }
 
 interface JiraSearchResponse {
-  issues?: Array<{ key?: unknown; fields?: { summary?: unknown; status?: { name?: unknown } } }>;
+  issues?: Array<{ key?: unknown; fields?: Record<string, unknown> }>;
 }
 
 export interface JiraHttpResponse {
@@ -75,6 +84,12 @@ export class JiraRepository {
     const authorization = settings.jiraAuthType === "basic"
       ? `Basic ${btoa(`${settings.jiraEmail.trim()}:${token}`)}`
       : `Bearer ${token}`;
+    const estimateField = settings.jiraEstimateMdFieldId.trim();
+    const actualField = settings.jiraActualMdFieldId.trim();
+    const fields = ["summary", "status", "description", "duedate"];
+    if (estimateField) fields.push(estimateField);
+    if (actualField) fields.push(actualField);
+
     const response = await this.post(
       endpoint,
       {
@@ -82,17 +97,32 @@ export class JiraRepository {
         "Content-Type": "application/json",
         Accept: "application/json",
       },
-      JSON.stringify({ jql: settings.jiraJql.trim(), fields: ["summary", "status"], maxResults: 100 }),
+      JSON.stringify({ jql: settings.jiraJql.trim(), fields, maxResults: 100 }),
     );
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`Jira request failed (${response.status}): ${response.text.slice(0, 240)}`);
     }
     const payload = JSON.parse(response.text) as JiraSearchResponse;
     return (payload.issues ?? []).flatMap((issue) => {
+      const f = issue.fields ?? {};
       const key = typeof issue.key === "string" ? issue.key.trim() : "";
-      const summary = typeof issue.fields?.summary === "string" ? issue.fields.summary.trim() : "";
-      const statusName = typeof issue.fields?.status?.name === "string" ? issue.fields.status.name.trim() : "";
-      return key && summary ? [{ key, summary, statusName }] : [];
+      const summary = typeof f["summary"] === "string" ? f["summary"].trim() : "";
+      const status = f["status"] as { name?: unknown } | undefined;
+      const statusName = typeof status?.name === "string" ? status.name.trim() : "";
+      if (!key || !summary) return [];
+      return [{
+        key,
+        summary,
+        statusName,
+        description: adfToMarkdown(f["description"]),
+        estimateMd: estimateField ? asFiniteNumber(f[estimateField]) : null,
+        actualMd: actualField ? asFiniteNumber(f[actualField]) : null,
+        dueDate: typeof f["duedate"] === "string" && f["duedate"] ? f["duedate"] : null,
+      }];
     });
   }
+}
+
+function asFiniteNumber(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
 }

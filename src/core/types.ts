@@ -65,6 +65,12 @@ export interface Task {
   jiraKey: string | null;
   /** 카드에 표시할 짧은 plain text 비고. null이면 frontmatter에서 제거. */
   remarks: string | null;
+  /** 견적 공수(MD, 일 단위). Jira Estimate MD 등에서 동기화. null이면 frontmatter에서 제거. */
+  estimateMd?: number | null;
+  /** 실제 투입 공수(MD). 완료 후 기록/동기화. null이면 frontmatter에서 제거. */
+  actualMd?: number | null;
+  /** 마감일 YYYY-MM-DD. null이면 frontmatter에서 제거. */
+  due?: string | null;
   /** 업무, 학습 등 카드 분류용 사용자 태그. */
   tags?: string[];
   /** 검색/카드 preview용 Markdown body 첫 요약. 디스크에는 저장하지 않고 parse/create에서 derive. */
@@ -152,6 +158,12 @@ export interface TaskFrontmatterDoc {
   /** undefined면 frontmatter에서 제거 */
   remarks?: string;
   /** undefined면 frontmatter에서 제거 */
+  estimateMd?: number;
+  /** undefined면 frontmatter에서 제거 */
+  actualMd?: number;
+  /** undefined면 frontmatter에서 제거 */
+  due?: string;
+  /** undefined면 frontmatter에서 제거 */
   tags?: string[];
   createdAt: string;
   updatedAt: string;
@@ -187,6 +199,9 @@ export interface CreateTaskInput {
   priority?: Priority | null;
   jiraKey?: string | null;
   remarks?: string | null;
+  estimateMd?: number | null;
+  actualMd?: number | null;
+  due?: string | null;
   tags?: string[];
   body?: string;
 }
@@ -198,6 +213,9 @@ export interface UpdateTaskInput {
   priority?: Priority | null;
   jiraKey?: string | null;
   remarks?: string | null;
+  estimateMd?: number | null;
+  actualMd?: number | null;
+  due?: string | null;
   tags?: string[];
 }
 
@@ -265,6 +283,10 @@ export interface PluginSettings {
   jiraJql: string;
   /** Jira REST API major version. Cloud는 3, Server/Data Center는 보통 2. */
   jiraApiVersion: "2" | "3";
+  /** 견적 MD가 담긴 Jira 커스텀 필드 id (예: customfield_12766). 빈 값이면 미조회. */
+  jiraEstimateMdFieldId: string;
+  /** 실제 MD가 담긴 Jira 커스텀 필드 id (예: customfield_12767). 빈 값이면 미조회. */
+  jiraActualMdFieldId: string;
   /** 0이면 자동 동기화하지 않고 버튼/명령으로만 동기화한다. */
   jiraSyncIntervalMinutes: number;
   /** YYYY-MM-DD. 비어 있으면 스프린트 자동 보관을 실행하지 않는다. */
@@ -290,6 +312,8 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   jiraApiToken: "",
   jiraJql: "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC",
   jiraApiVersion: "2",
+  jiraEstimateMdFieldId: "",
+  jiraActualMdFieldId: "",
   jiraSyncIntervalMinutes: 15,
   sprintStartDate: "",
   sprintLengthDays: 14,
