@@ -1,4 +1,4 @@
-import { requestUrl } from "obsidian";
+import { request as httpsRequest } from "https";
 import type { PluginSettings } from "../core/types";
 
 export interface JiraIssue {
@@ -11,8 +11,59 @@ interface JiraSearchResponse {
   issues?: Array<{ key?: unknown; fields?: { summary?: unknown; status?: { name?: unknown } } }>;
 }
 
+export interface JiraHttpResponse {
+  status: number;
+  text: string;
+}
+
+export type JiraHttpPost = (
+  url: string,
+  headers: Record<string, string>,
+  body: string,
+) => Promise<JiraHttpResponse>;
+
+/**
+ * 기본 전송자: Node https 직접 호출.
+ *
+ * 옵시디언 requestUrl 은 Electron 세션 쿠키를 함께 실어 보내 Atlassian 이
+ * 브라우저 세션으로 오인, Basic 인증이 유효해도 XSRF 403 을 낸다.
+ * `X-Atlassian-Token: no-check` 헤더로도 막히지 않음을 실측했다(2026-08-08:
+ * 같은 자격증명·JQL 의 쿠키 없는 CLI 재현은 200, requestUrl 은 403).
+ * Node https 는 쿠키 저장소 자체가 없어 이 문제 계열이 원천 차단된다.
+ */
+export const nodeHttpsPost: JiraHttpPost = (url, headers, body) =>
+  new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const req = httpsRequest(
+      {
+        hostname: u.hostname,
+        port: u.port ? Number(u.port) : 443,
+        path: u.pathname + u.search,
+        method: "POST",
+        headers: {
+          ...headers,
+          "Content-Length": String(new TextEncoder().encode(body).length),
+        },
+      },
+      (res) => {
+        let text = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk: string) => {
+          text += chunk;
+        });
+        res.on("end", () => resolve({ status: res.statusCode ?? 0, text }));
+      },
+    );
+    req.on("error", reject);
+    req.setTimeout(20_000, () => req.destroy(new Error("Jira request timed out")));
+    req.write(body);
+    req.end();
+  });
+
 /** Jira REST boundary. Credentials are read only from device-local plugin settings. */
 export class JiraRepository {
+  constructor(private readonly post: JiraHttpPost = nodeHttpsPost) {}
+
   async search(settings: PluginSettings): Promise<JiraIssue[]> {
     const apiUrl = settings.jiraApiUrl.trim().replace(/\/+$/u, "");
     const token = settings.jiraApiToken.trim();
@@ -24,24 +75,19 @@ export class JiraRepository {
     const authorization = settings.jiraAuthType === "basic"
       ? `Basic ${btoa(`${settings.jiraEmail.trim()}:${token}`)}`
       : `Bearer ${token}`;
-    const response = await requestUrl({
-      url: endpoint,
-      method: "POST",
-      headers: {
+    const response = await this.post(
+      endpoint,
+      {
         Authorization: authorization,
         "Content-Type": "application/json",
         Accept: "application/json",
-        // Obsidian의 requestUrl은 Electron session에 남은 쿠키를 함께 보낼 수 있어,
-        // Basic/Bearer 인증뿐이어도 Atlassian이 브라우저 세션으로 오인해 XSRF 403을 낼 수 있다.
-        "X-Atlassian-Token": "no-check",
       },
-      body: JSON.stringify({ jql: settings.jiraJql.trim(), fields: ["summary", "status"], maxResults: 100 }),
-      throw: false,
-    });
+      JSON.stringify({ jql: settings.jiraJql.trim(), fields: ["summary", "status"], maxResults: 100 }),
+    );
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`Jira request failed (${response.status}): ${response.text.slice(0, 240)}`);
     }
-    const payload = response.json as JiraSearchResponse;
+    const payload = JSON.parse(response.text) as JiraSearchResponse;
     return (payload.issues ?? []).flatMap((issue) => {
       const key = typeof issue.key === "string" ? issue.key.trim() : "";
       const summary = typeof issue.fields?.summary === "string" ? issue.fields.summary.trim() : "";

@@ -18,6 +18,8 @@ const buildOptions = {
   external: [
     "obsidian",
     "electron",
+    // Node 내장 모듈 (데스크톱 전용 플러그인 — 렌더러에서 require 가능)
+    "https",
     "@codemirror/autocomplete",
     "@codemirror/collab",
     "@codemirror/commands",
