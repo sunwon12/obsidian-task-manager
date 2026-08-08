@@ -147,6 +147,18 @@ describe("TaskRepository.findAll", () => {
     expect(tasks[0]!.id).toBe(id);
   });
 
+  it("create survives 'Folder already exists' from createFolder — Jira sync path (2026-08-08)", async () => {
+    // Jira 동기화가 태스크 파일을 만들 때 지나가는 경로. 부팅 인덱스 레이스로
+    // createFolder 가 throw 하면 "Jira sync failed: Folder already exists"가 됐다.
+    const app = new App();
+    vi.spyOn(app.vault, "createFolder").mockRejectedValue(
+      new Error("Folder already exists."),
+    );
+    const { repo } = makeRepo(app);
+    const created = await repo.create(makeTaskObject(newId("task")), "본문");
+    expect(created.path).toContain("task_");
+  });
+
   it("still skips cached files whose cached type is not task (pre-filter kept)", async () => {
     const app = new App();
     const path = `${TASKS}/회의록아님 - note.md`;

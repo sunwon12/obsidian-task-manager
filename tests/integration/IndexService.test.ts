@@ -58,6 +58,17 @@ describe("IndexService.bootstrap", () => {
     }
   });
 
+  it("survives boot index race: createFolder throws 'Folder already exists' (2026-08-08)", async () => {
+    // 부팅 직후엔 vault 인덱스가 디스크에 실존하는 폴더를 아직 몰라
+    // getAbstractFileByPath=null → createFolder → "Folder already exists" throw.
+    // 이 예외가 bootstrap 을 죽이면 보드 전체가 빈다(실사고).
+    const { app, idx } = build();
+    vi.spyOn(app.vault, "createFolder").mockRejectedValue(
+      new Error("Folder already exists."),
+    );
+    await expect(idx.bootstrap()).resolves.not.toThrow();
+  });
+
   it("indexes existing tasks into store after createTask + cache registration", async () => {
     const { app, tasks, store, idx } = build();
     await idx.bootstrap();

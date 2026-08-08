@@ -174,6 +174,8 @@ export class Workspace {
   getLeaf(_mode?: string): WorkspaceLeaf { return new WorkspaceLeaf(); }
   revealLeaf(_leaf: WorkspaceLeaf): void {}
   detachLeavesOfType(_type: string): void {}
+  // 실제 옵시디언은 vault 로드 완료 후 호출한다. 테스트에서는 즉시 실행.
+  onLayoutReady(cb: () => void): void { cb(); }
 }
 
 export class WorkspaceLeaf {

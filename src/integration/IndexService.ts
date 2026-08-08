@@ -64,7 +64,16 @@ export class IndexService {
     for (const path of folders) {
       const existing = this.app.vault.getAbstractFileByPath(path);
       if (existing) continue;
-      await this.app.vault.createFolder(path);
+      try {
+        await this.app.vault.createFolder(path);
+      } catch (err) {
+        // 부팅 직후엔 vault 인덱스가 디스크에 실존하는 폴더를 아직 모를 수 있다.
+        // 그 상태에서 createFolder 는 "Folder already exists"를 던지는데, 이건
+        // 정상 상황이다. 여기서 throw 하면 bootstrap 전체가 죽어 보드가 빈다
+        // (2026-08-08 실사고). 진짜 생성 실패만 위로 올린다.
+        const message = err instanceof Error ? err.message : String(err);
+        if (!/already exists/iu.test(message)) throw err;
+      }
     }
   }
 

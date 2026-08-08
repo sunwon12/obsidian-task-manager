@@ -207,6 +207,12 @@ export class ProjectRepository {
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof TFolder) return;
     if (existing) return;
-    await this.app.vault.createFolder(path);
+    try {
+      await this.app.vault.createFolder(path);
+    } catch (err) {
+      // TaskRepository.ensureFolderExists 와 동일한 부팅 인덱스 레이스 보호.
+      const message = err instanceof Error ? err.message : String(err);
+      if (!/already exists/iu.test(message)) throw err;
+    }
   }
 }

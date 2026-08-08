@@ -369,7 +369,16 @@ export class TaskRepository {
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof TFolder) return;
     if (existing) return; // 다른 파일이 path를 점유한 비정상 상태는 호출자가 다룸.
-    await this.app.vault.createFolder(path);
+    try {
+      await this.app.vault.createFolder(path);
+    } catch (err) {
+      // vault 인덱스가 늦게 차는 부팅 직후, 디스크에 실존하는 폴더에 대해
+      // createFolder 가 "already exists"를 던질 수 있다 — 정상으로 취급.
+      // 이 경로는 Jira 동기화의 태스크 생성에서도 지나가므로(2026-08-08 실사고:
+      // "Jira sync failed: Folder already exists") 삼키지 않으면 동기화가 죽는다.
+      const message = err instanceof Error ? err.message : String(err);
+      if (!/already exists/iu.test(message)) throw err;
+    }
   }
 }
 

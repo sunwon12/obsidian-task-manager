@@ -101,18 +101,10 @@ export default class TaskMasterPlugin extends Plugin {
       },
     };
 
-    try {
-      await indexService.bootstrap();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      diagnostics.record({
-        kind: "boot",
-        message: "bootstrap failed; loading TaskMaster shell",
-        cause: message,
-      });
-      console.error("TaskMaster bootstrap failed", err);
-      new Notice(`TaskMaster boot failed: ${message}`);
-    }
+    // bootstrap 은 여기서 바로 돌리지 않는다 — onload 시점엔 vault 인덱스가
+    // 아직 덜 차서 폴더/파일 존재 판정이 틀리는 부팅 레이스가 실측으로 확인됨
+    // (2026-08-08: ensureFolders "Folder already exists" → 보드 전체 공백).
+    // 파일 끝의 onLayoutReady 블록에서 실행한다.
 
     // T-402: View 등록
     this.registerView(
@@ -138,20 +130,40 @@ export default class TaskMasterPlugin extends Plugin {
     // T-604: Settings tab 등록
     this.addSettingTab(new TaskMasterSettingTab(this.app, this, this.container));
 
-    if (settings.jiraApiUrl.trim() && settings.jiraApiToken.trim()) {
-      void this.syncJira(jiraSyncService, settings);
-      if (settings.jiraSyncIntervalMinutes > 0) {
-        this.registerInterval(window.setInterval(() => {
-          void this.syncJira(jiraSyncService, settings);
-        }, settings.jiraSyncIntervalMinutes * 60_000));
-      }
-    }
+    // vault 로드 완료 후에만: ① bootstrap(전체 스캔) ② Jira 동기화 ③ 스프린트 아카이브.
+    // Jira 동기화는 기존 태스크(store)와 대조해 중복 생성을 막으므로, 빈 store 위에서
+    // 돌면 안 된다 — 반드시 bootstrap 완료 뒤 순서를 보장한다.
+    this.app.workspace.onLayoutReady(() => {
+      void (async () => {
+        try {
+          await indexService.bootstrap();
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          diagnostics.record({
+            kind: "boot",
+            message: "bootstrap failed; loading TaskMaster shell",
+            cause: message,
+          });
+          console.error("TaskMaster bootstrap failed", err);
+          new Notice(`TaskMaster boot failed: ${message}`);
+        }
 
-    void this.archiveCompletedSprint(taskService, settings, settingsRepo);
-    const interval = window.setInterval(() => {
-      void this.archiveCompletedSprint(taskService, settings, settingsRepo);
-    }, 60 * 60_000);
-    if (typeof this.registerInterval === "function") this.registerInterval(interval);
+        if (settings.jiraApiUrl.trim() && settings.jiraApiToken.trim()) {
+          void this.syncJira(jiraSyncService, settings);
+          if (settings.jiraSyncIntervalMinutes > 0) {
+            this.registerInterval(window.setInterval(() => {
+              void this.syncJira(jiraSyncService, settings);
+            }, settings.jiraSyncIntervalMinutes * 60_000));
+          }
+        }
+
+        void this.archiveCompletedSprint(taskService, settings, settingsRepo);
+        const interval = window.setInterval(() => {
+          void this.archiveCompletedSprint(taskService, settings, settingsRepo);
+        }, 60 * 60_000);
+        if (typeof this.registerInterval === "function") this.registerInterval(interval);
+      })();
+    });
   }
 
   /**
