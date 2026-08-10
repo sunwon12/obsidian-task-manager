@@ -171,6 +171,35 @@ describe("TaskService", () => {
     expect(raw).toContain("갤러리 편성 재구성");
   });
 
+  it("upsertJiraIssue는 Jira actualMd가 비어 있어도 로컬 기록(타이머)을 지우지 않는다", async () => {
+    const { tasks, store } = build();
+    const issue = {
+      key: "BDCC-2", summary: "보호", statusName: "In Progress",
+      description: "", estimateMd: null, actualMd: null, dueDate: null,
+    };
+    await tasks.upsertJiraIssue(issue);
+    const created = [...store.getState().tasks.values()].find((t) => t.jiraKey === "BDCC-2")!;
+    // 타이머 스탑이 기록한 것처럼 로컬에서 actualMd를 채운다 (T-901)
+    await tasks.updateTask(created.id, { actualMd: 0.5 });
+
+    await expect(tasks.upsertJiraIssue(issue)).resolves.toBe("updated");
+    expect(store.getState().tasks.get(created.id)?.actualMd).toBe(0.5);
+  });
+
+  it("upsertJiraIssue는 Jira에 actualMd 값이 있으면 여전히 Jira 값으로 갱신한다", async () => {
+    const { tasks, store } = build();
+    const issue = {
+      key: "BDCC-3", summary: "Jira 우선", statusName: "In Progress",
+      description: "", estimateMd: null, actualMd: null, dueDate: null,
+    };
+    await tasks.upsertJiraIssue(issue);
+    const created = [...store.getState().tasks.values()].find((t) => t.jiraKey === "BDCC-3")!;
+    await tasks.updateTask(created.id, { actualMd: 0.5 });
+
+    await tasks.upsertJiraIssue({ ...issue, actualMd: 2 });
+    expect(store.getState().tasks.get(created.id)?.actualMd).toBe(2);
+  });
+
   it("upsertJiraIssue backfills an empty body but never overwrites user notes", async () => {
     const { tasks, store, app } = build();
     const issue = {

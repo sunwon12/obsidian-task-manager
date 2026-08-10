@@ -163,6 +163,14 @@ const en: Record<keyof typeof ko, string> = {
   "settings.diagnostics.kindConflict": "Conflict",
   "settings.diagnostics.kindBoot": "Boot",
   "settings.diagnostics.kindSync": "Jira sync",
+
+  // Timer (T-901)
+  "timer.start": "Start timer",
+  "timer.resume": "Resume timer",
+  "timer.pause": "Pause timer",
+  "timer.stop": "Stop and mark done",
+  "timer.restoreBanner": "Show banner again",
+  "timer.menu.empty": "No active timers",
 };
 
 export default en;

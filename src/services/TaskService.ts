@@ -196,8 +196,10 @@ export class TaskService {
       title: issue.summary,
       status: jiraStatusToTaskStatus(issue.statusName),
       estimateMd: issue.estimateMd,
-      actualMd: issue.actualMd,
       due: issue.dueDate,
+      // 타이머(T-901) 등 로컬에서 기록한 actualMd 보호: Jira에 값이 있을 때만 반영하고,
+      // Jira 필드가 비어 있다는 이유로 로컬 기록을 지우지는 않는다.
+      ...(issue.actualMd != null ? { actualMd: issue.actualMd } : {}),
     };
     if (!existing) {
       await this.createTask({ ...fields, jiraKey: issue.key, body: issue.description });

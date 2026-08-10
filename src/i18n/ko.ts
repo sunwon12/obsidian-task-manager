@@ -161,6 +161,14 @@ const ko = {
   "settings.diagnostics.kindConflict": "충돌",
   "settings.diagnostics.kindBoot": "부팅",
   "settings.diagnostics.kindSync": "Jira 동기화",
+
+  // Timer (T-901)
+  "timer.start": "타이머 시작",
+  "timer.resume": "타이머 재개",
+  "timer.pause": "타이머 일시정지",
+  "timer.stop": "종료하고 완료 처리",
+  "timer.restoreBanner": "배너 다시 표시",
+  "timer.menu.empty": "진행 중인 타이머 없음",
 } as const;
 
 export default ko;

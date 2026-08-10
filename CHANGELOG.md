@@ -5,6 +5,48 @@ All notable changes to TaskMaster Obsidian plugin will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-08-11
+
+### Fixed
+
+- Jira sync no longer wipes locally recorded `actualMd` (e.g., from the T-901 timer) when
+  the Jira Actual MD field is empty. When Jira has a value, it still wins as before.
+
+## [0.4.0] - 2026-08-11
+
+T-901 follow-up: macOS menu bar timer, alongside the in-window banners.
+
+### Added
+
+- macOS menu bar (Tray) timer display via `@electron/remote` (same access path as the
+  obsidian-tray community plugin): stopwatch template icon + live elapsed text
+  (`▶ 25:31`, `⏸ 04:10 +2`), visible even when Obsidian is in the background.
+- Clicking the icon opens a per-task menu with Start/Pause(Resume)/Stop(→DONE + actualMd).
+- Swipe-dismissed banners stay listed in the menu bar with a "Show banner again" action
+  (`TaskTimerService.restore`).
+- Graceful degradation: on mobile or if Electron remote is unavailable, the menu bar
+  feature silently disables itself; banners are unaffected. Tray is destroyed on unload.
+- Spec coverage: `tests/ui/timer/TimerMenuBar.test.ts` (M1–M8) with an injected fake tray port.
+
+## [0.3.0] - 2026-08-10
+
+T-901: DOING timer notification banners (task_01KZN31H).
+
+### Added
+
+- macOS-notification-style timer banners: moving a task to DOING shows a rectangular banner
+  stacked at the top-right of the Obsidian window (newest on top), independent of the
+  TaskMaster view (`mountTimerOverlay` on `document.body`).
+- Per-task stopwatch with Start / Pause(Resume) / Stop buttons. Stop moves the task to DONE
+  and records tracked time into `actualMd` (1 MD = 8h, rounded to 2 decimals, min 0.01,
+  summed onto any existing value).
+- Swipe-right to dismiss a banner (≥80px); tracking continues in the background.
+- Timer state persists to `TaskMaster/.timers.json` and restores across Obsidian restarts,
+  including wall-clock time elapsed while closed (running timers) and frozen totals (paused).
+- Spec coverage: `tests/services/TaskTimerService.test.ts` (R1–R22),
+  `tests/ui/timer/TimerNotificationStack.test.tsx` (U1–U10),
+  manual checklist `tests/manual/timer-notifications.md`.
+
 ## [0.2.0] - 2026-05-11
 
 Phase 2: usability hardening and project quick memo workspace.

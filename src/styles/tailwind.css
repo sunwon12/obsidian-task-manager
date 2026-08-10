@@ -30,3 +30,33 @@
   outline-offset: 2px;
   border-radius: 2px;
 }
+
+/* T-901: DOING 타이머 알림 오버레이.
+   .taskmaster-root의 height:100% / overflow:hidden을 오버레이 용도로 되돌리고,
+   Obsidian notice처럼 우상단 고정. 컨테이너는 클릭을 통과시키고 배너만 받는다. */
+.taskmaster-root.tm-timer-overlay {
+  position: fixed;
+  top: 44px;
+  right: 16px;
+  z-index: 1000;
+  width: 340px;
+  height: auto;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.tm-timer-overlay .tm-timer-banner {
+  pointer-events: auto;
+  animation: tm-timer-slide-in 0.22s ease-out;
+}
+
+@keyframes tm-timer-slide-in {
+  from {
+    transform: translateX(120%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}

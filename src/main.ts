@@ -6,8 +6,10 @@
 // - View 등록 + ribbon icon + command palette
 // - onunload sync flush (ADR-0004)
 
-import { Notice, Plugin } from "obsidian";
+import { Notice, Plugin, TFile } from "obsidian";
 import { TaskMasterView, VIEW_TYPE_TASKMASTER } from "./view/TaskMasterView";
+import { mountTimerOverlay } from "./ui/timer/TimerNotificationStack";
+import { mountTimerMenuBar } from "./ui/timer/TimerMenuBar";
 import { DiagnosticsLog } from "./core/diagnostics";
 import { EventBus } from "./core/eventBus";
 import { initI18n } from "./i18n";
@@ -18,6 +20,7 @@ import {
 } from "./repositories";
 import {
   BoardService, MeetingService, ProjectMemoService, ProjectService, TaskService, JiraSyncService,
+  TaskTimerService, type PersistedTimer, type TimerPersistencePort,
 } from "./services";
 import { IndexService } from "./integration/IndexService";
 import { createTaskMasterStore, type TaskMasterStore } from "./store/taskMasterStore";
@@ -46,6 +49,9 @@ export default class TaskMasterPlugin extends Plugin {
   private taskRepo: TaskRepository | null = null;
   private boardRepo: BoardRepository | null = null;
   private meetingRepo: MeetingRepository | null = null;
+  private timerService: TaskTimerService | null = null;
+  private timerOverlayDispose: (() => void) | null = null;
+  private timerMenuBarDispose: (() => void) | null = null;
 
   override async onload(): Promise<void> {
     const settingsRepo = new SettingsRepository(this);
@@ -79,6 +85,13 @@ export default class TaskMasterPlugin extends Plugin {
     const projectMemoService = new ProjectMemoService(projectRepo, store);
     const meetingService = new MeetingService(meetingRepo, store);
     const jiraSyncService = new JiraSyncService(new JiraRepository(), taskService, diagnostics);
+
+    // T-901: DOING 타이머. 상태는 vault의 .timers.json에 저장해 재시작 후 복원한다.
+    const timerService = new TaskTimerService(
+      events, store, taskService,
+      this.createTimerPersistence(`${dataRoot}/.timers.json`),
+    );
+    this.timerService = timerService;
 
     const indexService = new IndexService(
       this.app, this, store,
@@ -148,6 +161,20 @@ export default class TaskMasterPlugin extends Plugin {
           new Notice(`TaskMaster boot failed: ${message}`);
         }
 
+        // T-901: bootstrap으로 store가 채워진 뒤에 타이머 복원 + 오버레이 mount.
+        try {
+          await timerService.init();
+          this.timerOverlayDispose = mountTimerOverlay(timerService);
+          // 배너와 병행하는 맥 메뉴바 표시. 미지원 환경이면 null (배너만 동작).
+          this.timerMenuBarDispose = mountTimerMenuBar(timerService);
+        } catch (err) {
+          diagnostics.record({
+            kind: "boot",
+            message: "timer overlay init failed",
+            cause: err instanceof Error ? err.message : String(err),
+          });
+        }
+
         if (settings.jiraApiUrl.trim() && settings.jiraApiToken.trim()) {
           void this.syncJira(jiraSyncService, settings);
           if (settings.jiraSyncIntervalMinutes > 0) {
@@ -172,10 +199,39 @@ export default class TaskMasterPlugin extends Plugin {
    * 여기서는 reorder debounce 잔여만 fire-and-forget으로 flush한다.
    */
   override onunload(): void {
+    this.timerMenuBarDispose?.();
+    this.timerMenuBarDispose = null;
+    this.timerOverlayDispose?.();
+    this.timerOverlayDispose = null;
+    this.timerService?.dispose();
     void this.taskRepo?.flush();
     void this.boardRepo?.flush();
     void this.meetingRepo?.flush();
     this.app.workspace.detachLeavesOfType(VIEW_TYPE_TASKMASTER);
+  }
+
+  /** T-901: .timers.json 어댑터. 없으면 빈 상태, 파손이면 무시하고 새로 시작한다. */
+  private createTimerPersistence(timersPath: string): TimerPersistencePort {
+    return {
+      load: async (): Promise<PersistedTimer[]> => {
+        const file = this.app.vault.getAbstractFileByPath(timersPath);
+        if (!(file instanceof TFile)) return [];
+        try {
+          const parsed = JSON.parse(await this.app.vault.read(file)) as {
+            timers?: PersistedTimer[];
+          };
+          return Array.isArray(parsed?.timers) ? parsed.timers : [];
+        } catch {
+          return [];
+        }
+      },
+      save: async (timers): Promise<void> => {
+        const json = JSON.stringify({ version: 1, timers }, null, 2);
+        const file = this.app.vault.getAbstractFileByPath(timersPath);
+        if (file instanceof TFile) await this.app.vault.modify(file, json);
+        else await this.app.vault.create(timersPath, json);
+      },
+    };
   }
 
   /**
