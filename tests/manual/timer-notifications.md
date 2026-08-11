@@ -3,6 +3,17 @@
 jsdom으로 검증할 수 없는 시각·감각 요구사항 체크리스트.
 자동화 스펙: `tests/services/TaskTimerService.test.ts`, `tests/ui/timer/TimerNotificationStack.test.tsx`.
 
+## 작업 계획·현재 단계
+
+- [ ] 태스크 생성/편집 창에서 단계를 입력하면 frontmatter `step1`, `step2`, ... 개별 문자열 속성으로 저장된다.
+- [ ] 예전 `steps` 목록을 가진 task도 정상적으로 읽히고, 다음 저장 시 번호별 속성으로 변환된다.
+- [ ] DOING 타이머의 시간 아래에 단계가 보이고, `currentStep` 이전은 ✓, 현재는 →, 이후는 번호로 보인다.
+- [ ] 타이머가 돌아가는 동안 task Markdown의 `currentStep` 숫자를 바꾸면 재시작 없이 표시가 갱신된다.
+- [ ] 타이머의 임의 단계를 클릭하면 바로 현재 단계로 강조되고 task Markdown의 `currentStep`에도 저장된다.
+- [ ] 태스크 생성/편집 창은 `1단계`, `2단계` 개별 입력과 단계 추가·삭제 버튼을 보여준다.
+- [ ] 7단계 이상인 계획도 배너 내부에서 잘리지 않고 모두 보인다.
+- [ ] Obsidian 기본 속성 패널이나 외부 AI가 `stepN`/`currentStep`을 수정하면 실행 중인 타이머에 즉시 반영된다.
+
 ## 화면 위치·모양 (맥북 슬랙 알림창 스타일)
 
 - [ ] 배너가 Obsidian 창 **우상단**에 고정으로 뜬다 (에디터·다른 노트를 열어도, TaskMaster 뷰를 닫아도 보인다).

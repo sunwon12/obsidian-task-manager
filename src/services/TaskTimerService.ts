@@ -26,6 +26,10 @@ export interface TaskTimerSnapshot {
   taskId: TaskId;
   /** 배너에 표시할 태스크 제목 (store에서 derive). */
   title: string;
+  /** 태스크에 미리 입력한 작업 계획. */
+  steps: string[];
+  /** 1-based 현재 단계. */
+  currentStep: number | null;
   phase: TimerPhase;
   /** 호출 시점 기준 누적 측정 시간(ms). running이면 실시간 계산값. */
   elapsedMs: number;
@@ -194,6 +198,15 @@ export class TaskTimerService {
     this.persist();
   }
 
+  /** 배너에서 단계를 고르면 task frontmatter의 currentStep도 즉시 갱신한다. */
+  async selectStep(taskId: TaskId, step: number): Promise<void> {
+    const timer = this.timers.get(taskId);
+    const task = this.store.getState().tasks.get(taskId);
+    const stepCount = task?.steps?.length ?? 0;
+    if (!timer || !task || !Number.isInteger(step) || step < 1 || step > stepCount) return;
+    await this.tasks.updateTask(taskId, { currentStep: step });
+  }
+
   /**
    * 추적 종료 + 측정 시간을 MD로 환산해 actualMd에 기록(기존 값에 합산)
    * + 태스크를 done으로 이동 + 타이머 제거. 측정 0이면 actualMd 미변경.
@@ -311,9 +324,12 @@ export class TaskTimerService {
   }
 
   private toSnapshot(t: TimerInternal): TaskTimerSnapshot {
+    const task = this.store.getState().tasks.get(t.taskId);
     return {
       taskId: t.taskId,
-      title: this.store.getState().tasks.get(t.taskId)?.title ?? "",
+      title: task?.title ?? "",
+      steps: task?.steps ?? [],
+      currentStep: task?.currentStep ?? null,
       phase: t.phase,
       elapsedMs: this.elapsedOf(t),
       dismissed: t.dismissed,

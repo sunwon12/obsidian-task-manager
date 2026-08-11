@@ -30,6 +30,8 @@ export class TaskService {
     const actualMd = input.actualMd ?? null;
     const due = (input.due ?? "").trim() || null;
     const tags = normalizeTags(input.tags ?? []);
+    const steps = normalizeSteps(input.steps ?? []);
+    const currentStep = normalizeCurrentStep(input.currentStep, steps, true);
     const draft: Task = {
       schemaVersion: SCHEMA_VERSION,
       id,
@@ -44,6 +46,8 @@ export class TaskService {
       actualMd,
       due,
       tags,
+      steps,
+      currentStep,
       bodySummary: summarizeBody(input.body ?? ""),
       createdAt: nowIso(),
       updatedAt: nowIso(),
@@ -54,6 +58,8 @@ export class TaskService {
         "priority", ...(jiraKey ? ["jiraKey"] : []), ...(remarks ? ["remarks"] : []),
         ...(estimateMd != null ? ["estimateMd"] : []), ...(actualMd != null ? ["actualMd"] : []),
         ...(due ? ["due"] : []), ...(tags.length ? ["tags"] : []),
+        ...steps.map((_, index) => `step${index + 1}`),
+        ...(currentStep != null ? ["currentStep"] : []),
         "createdAt", "updatedAt",
       ],
       knownMtime: 0,
@@ -150,6 +156,22 @@ export class TaskService {
     if (hasOwn(input, "tags")) {
       const tags = normalizeTags(input.tags ?? []);
       if (tags.join("\u0000") !== (next.tags ?? []).join("\u0000")) next = { ...next, tags };
+    }
+
+    if (hasOwn(input, "steps")) {
+      const steps = normalizeSteps(input.steps ?? []);
+      if (steps.join("\u0000") !== (next.steps ?? []).join("\u0000")) {
+        next = {
+          ...next,
+          steps,
+          currentStep: normalizeCurrentStep(next.currentStep, steps, true),
+        };
+      }
+    }
+
+    if (hasOwn(input, "currentStep")) {
+      const currentStep = normalizeCurrentStep(input.currentStep, next.steps ?? [], false);
+      if (currentStep !== (next.currentStep ?? null)) next = { ...next, currentStep };
     }
 
     if (next === previous) return previous;
@@ -264,4 +286,18 @@ function hasOwn<T extends object, K extends PropertyKey>(
 
 function normalizeTags(tags: readonly string[]): string[] {
   return [...new Set(tags.map((tag) => tag.trim().replace(/^#/u, "")).filter(Boolean))];
+}
+
+function normalizeSteps(steps: readonly string[]): string[] {
+  return steps.map((step) => step.trim()).filter(Boolean);
+}
+
+function normalizeCurrentStep(
+  value: number | null | undefined,
+  steps: readonly string[],
+  defaultToFirst: boolean,
+): number | null {
+  if (steps.length === 0) return null;
+  if (value == null || !Number.isInteger(value)) return defaultToFirst ? 1 : null;
+  return Math.min(Math.max(value, 1), steps.length);
 }

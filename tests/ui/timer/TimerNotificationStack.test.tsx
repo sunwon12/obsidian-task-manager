@@ -9,7 +9,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as React from "react";
-import { render, fireEvent, act, within, cleanup } from "@testing-library/react";
+import { render, fireEvent, act, within, cleanup, waitFor } from "@testing-library/react";
 import { App as ObsidianApp } from "obsidian";
 import {
   TimerNotificationStack,
@@ -115,6 +115,72 @@ describe("TimerNotificationStack — 배너 스택 (슬랙 알림창 스타일)"
       await s.taskService.moveTask(task.id, "in-review");
     });
     expect(s.ui.queryByTestId("tm-timer-banner")).toBeNull();
+  });
+
+  it("[U3b] 작업 계획을 시간 아래에 보여주고 이전/현재/대기 단계를 구분한다", async () => {
+    const s = await setup();
+    await s.create({
+      title: "단계 확인",
+      status: "doing",
+      steps: ["서버 프롬프트", "문서 작성", "QA 환경 검증"],
+      currentStep: 2,
+    });
+
+    const plan = s.ui.getByTestId("tm-timer-steps");
+    const items = within(plan).getAllByRole("listitem");
+    expect(items.map((item) => item.textContent)).toEqual([
+      "✓서버 프롬프트",
+      "→문서 작성",
+      "3QA 환경 검증",
+    ]);
+    expect(items.map((item) => item.dataset.state)).toEqual(["completed", "current", "pending"]);
+  });
+
+  it("[U3c] 타이머가 돌아가는 중 currentStep이 갱신되면 바로 반영한다", async () => {
+    const s = await setup();
+    const task = await s.create({
+      title: "AI가 진행률 갱신",
+      status: "doing",
+      steps: ["하나", "둘", "셋"],
+    });
+    expect(s.ui.getByTestId("tm-timer-steps").querySelector('[data-state="current"]')?.textContent)
+      .toContain("하나");
+
+    await act(async () => {
+      await s.taskService.updateTask(task.id, { currentStep: 3 });
+    });
+    expect(s.ui.getByTestId("tm-timer-steps").querySelector('[data-state="current"]')?.textContent)
+      .toContain("셋");
+  });
+
+  it("[U3d] 배너의 단계를 클릭하면 그 단계가 현재 단계로 저장된다", async () => {
+    const s = await setup();
+    const task = await s.create({
+      title: "클릭으로 단계 선택",
+      status: "doing",
+      steps: ["하나", "둘", "셋"],
+    });
+
+    fireEvent.click(s.ui.getByTestId("tm-timer-step-3"));
+
+    await waitFor(() => {
+      expect(s.store.getState().tasks.get(task.id)?.currentStep).toBe(3);
+      expect(s.ui.getByTestId("tm-timer-step-3").getAttribute("aria-pressed")).toBe("true");
+    });
+  });
+
+  it("[U3e] 7단계 이상이어도 높이 제한으로 자르지 않고 모두 보여준다", async () => {
+    const s = await setup();
+    await s.create({
+      title: "전체 단계 표시",
+      status: "doing",
+      steps: Array.from({ length: 7 }, (_, index) => `${index + 1}번 작업`),
+    });
+
+    const plan = s.ui.getByTestId("tm-timer-steps");
+    expect(within(plan).getAllByRole("listitem")).toHaveLength(7);
+    expect(plan.className).not.toContain("tm-max-h");
+    expect(plan.className).not.toContain("tm-overflow-y-auto");
   });
 });
 

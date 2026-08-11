@@ -82,6 +82,8 @@ function snap(partial: Partial<TaskTimerSnapshot>): TaskTimerSnapshot {
   return {
     taskId: "task_x" as TaskId,
     title: "테스트",
+    steps: [],
+    currentStep: null,
     phase: "idle",
     elapsedMs: 0,
     dismissed: false,

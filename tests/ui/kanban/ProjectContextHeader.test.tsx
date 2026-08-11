@@ -56,6 +56,7 @@ function build(): {
     boardService,
     meetingRepo,
     projectRepo,
+    events,
     diagnostics,
     "TaskMaster",
   );

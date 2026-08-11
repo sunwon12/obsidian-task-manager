@@ -5,6 +5,42 @@ All notable changes to TaskMaster Obsidian plugin will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] - 2026-08-12
+
+### Fixed
+
+- Timer banners no longer clip work plans after the fifth row; all configured steps are visible.
+- Task changes made through Obsidian's native Properties panel or external file automation now
+  emit task update events, immediately refreshing active timer plans and `currentStep` markers.
+
+## [0.5.2] - 2026-08-12
+
+### Changed
+
+- Work-plan storage now uses separate scalar frontmatter properties (`step1`, `step2`, ...),
+  so Obsidian's native Properties panel provides one text input per numbered step instead of
+  rendering the whole plan as array chips.
+- Legacy `steps` arrays remain readable and migrate to numbered properties on the next write.
+
+## [0.5.1] - 2026-08-12
+
+### Changed
+
+- Work plans in the task create/edit forms use individually numbered rows (`Step 1`, `Step 2`,
+  and so on) with add/remove controls instead of one multi-line field.
+- Every work-plan row in a timer banner is clickable. Clicking a row persists that position to
+  `currentStep`, so manual selection and external automation share the same progress state.
+
+## [0.5.0] - 2026-08-12
+
+### Added
+
+- Task create/edit forms now accept a multi-line work plan. Numbered or bulleted pasted lines
+  are normalized into the machine-readable `steps` frontmatter list.
+- Timer banners show the plan below elapsed time, with completed, current, and pending states.
+- The 1-based `currentStep` frontmatter field can be updated by external automation while a
+  timer is active; the banner refreshes immediately. The edit form also exposes a step picker.
+
 ## [0.4.1] - 2026-08-11
 
 ### Fixed

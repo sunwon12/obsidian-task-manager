@@ -97,6 +97,7 @@ export default class TaskMasterPlugin extends Plugin {
       this.app, this, store,
       taskRepo, boardRepo, boardService,
       meetingRepo, projectRepo,
+      events,
       diagnostics, dataRoot,
     );
 

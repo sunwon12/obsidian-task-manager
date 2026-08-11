@@ -18,7 +18,7 @@ const KNOWN_FIELDS: Record<EntityKind, ReadonlySet<string>> = {
   task: new Set([
     "schemaVersion", "id", "type", "status", "project",
     "priority", "jiraKey", "remarks", "estimateMd", "actualMd", "due",
-    "tags", "createdAt", "updatedAt", "archivedAt",
+    "tags", "steps", "currentStep", "createdAt", "updatedAt", "archivedAt",
   ]),
   meeting: new Set([
     "schemaVersion", "id", "type", "project", "date",
@@ -63,15 +63,19 @@ export function parseFile(raw: string, kind: EntityKind): FrontmatterParseResult
       ? (loaded as Record<string, unknown>)
       : {};
 
-  const known = KNOWN_FIELDS[kind];
   const managed: Record<string, unknown> = {};
   const passthrough: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
-    if (known.has(key)) managed[key] = value;
+    if (isKnownField(kind, key)) managed[key] = value;
     else passthrough[key] = value;
   }
 
   return { fm: { managed, passthrough, fieldOrder }, body };
+}
+
+/** task의 step1, step2 ...는 개수가 가변적인 managed field로 취급한다. */
+function isKnownField(kind: EntityKind, key: string): boolean {
+  return KNOWN_FIELDS[kind].has(key) || (kind === "task" && /^step[1-9]\d*$/u.test(key));
 }
 
 /**

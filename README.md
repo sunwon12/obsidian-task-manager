@@ -35,6 +35,7 @@ Local Markdown tasks ──┘
 - **One Kanban board** — HOLD, TODO, DOING, IN REVIEW, and DONE.
 - **Jira sync** — import your assigned Jira issues with JQL; no duplicate manual cards.
 - **Tags that stay visible** — classify cards with tags such as `업무`, `학습`, or `업무외` and see them directly on the board.
+- **Work plan beside the timer** — add ordered steps to a task and keep `currentStep` updated manually or through automation; completed/current/pending steps stay visible under the timer.
 - **Markdown-native** — task cards, projects, meetings, and memos are ordinary files you can search, link, edit, and back up.
 - **Projects that hold context** — attach tasks, meeting notes, and quick memos to a project.
 - **Fast daily use** — drag-and-drop on desktop, focused mobile controls, keyboard shortcuts, search, priority and project filters.

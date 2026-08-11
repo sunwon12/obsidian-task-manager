@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useStore } from "../../app/providers/TaskMasterProvider";
 import { t } from "../../i18n";
+import { normalizePlanSteps, WorkPlanEditor } from "./WorkPlanEditor";
 import type { Priority, ProjectId, Task } from "../../core/types";
 
 interface Props {
@@ -13,6 +14,8 @@ interface Props {
     jiraKey: string | null;
     remarks: string | null;
     tags: string[];
+    steps: string[];
+    currentStep: number | null;
   }) => Promise<void> | void;
 }
 
@@ -24,6 +27,8 @@ export const EditTaskModal: React.FC<Props> = ({ task, onClose, onSave }) => {
   const [jiraKey, setJiraKey] = React.useState(task.jiraKey ?? "");
   const [remarks, setRemarks] = React.useState(task.remarks ?? "");
   const [tags, setTags] = React.useState((task.tags ?? []).join(", "));
+  const [steps, setSteps] = React.useState<string[]>(task.steps?.length ? task.steps : [""]);
+  const [currentStep, setCurrentStep] = React.useState(task.currentStep ?? 1);
   const [submitting, setSubmitting] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const titleId = React.useId();
@@ -32,6 +37,9 @@ export const EditTaskModal: React.FC<Props> = ({ task, onClose, onSave }) => {
   const jiraKeyId = React.useId();
   const remarksId = React.useId();
   const tagsId = React.useId();
+  const currentStepId = React.useId();
+
+  const parsedSteps = React.useMemo(() => normalizePlanSteps(steps), [steps]);
 
   const sortedProjects = React.useMemo(
     () => [...projects.values()].sort((a, b) => a.title.localeCompare(b.title)),
@@ -63,6 +71,8 @@ export const EditTaskModal: React.FC<Props> = ({ task, onClose, onSave }) => {
         jiraKey: jiraKey.trim() || null,
         remarks: remarks.trim() || null,
         tags: parseTags(tags),
+        steps: parsedSteps,
+        currentStep: parsedSteps.length > 0 ? Math.min(currentStep, parsedSteps.length) : null,
       });
       onClose();
     } finally {
@@ -140,6 +150,27 @@ export const EditTaskModal: React.FC<Props> = ({ task, onClose, onSave }) => {
           placeholder={t("modal.task.jiraKeyPlaceholder")}
           className="tm-w-full tm-px-3 tm-py-2 tm-bg-tm-bg-alt tm-border tm-border-tm-border tm-rounded tm-text-tm-text"
         />
+
+        <WorkPlanEditor steps={steps} onChange={setSteps} />
+
+        <label htmlFor={currentStepId} className="tm-block tm-text-sm tm-mt-3 tm-mb-1">
+          {t("modal.task.currentStep")}
+        </label>
+        <select
+          id={currentStepId}
+          value={Math.min(currentStep, Math.max(parsedSteps.length, 1))}
+          onChange={(e) => setCurrentStep(Number(e.target.value))}
+          disabled={parsedSteps.length === 0}
+          className="tm-w-full tm-px-2 tm-py-1.5 tm-bg-tm-bg-alt tm-border tm-border-tm-border tm-rounded disabled:tm-opacity-50"
+        >
+          {parsedSteps.length === 0 ? (
+            <option value={1}>{t("modal.task.currentStepEmpty")}</option>
+          ) : parsedSteps.map((step, index) => (
+            <option key={`${index}-${step}`} value={index + 1}>
+              {index + 1}. {step}
+            </option>
+          ))}
+        </select>
 
         <label htmlFor={remarksId} className="tm-block tm-text-sm tm-mt-3 tm-mb-1">
           {t("modal.task.remarks")}

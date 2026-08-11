@@ -20,6 +20,7 @@ export const NewTaskButton: React.FC = () => {
     jiraKey: string | null;
     remarks: string | null;
     tags: string[];
+    steps: string[];
   }): Promise<void> {
     const payload: CreateTaskInput = {
       title: input.title,
@@ -28,6 +29,7 @@ export const NewTaskButton: React.FC = () => {
       jiraKey: input.jiraKey,
       remarks: input.remarks,
       tags: input.tags,
+      steps: input.steps,
       project: defaultProject,
     };
     await services.taskService.createTask(payload);

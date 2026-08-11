@@ -127,6 +127,25 @@ describe("TaskService", () => {
     expect(raw).toContain("tags:\n  - 업무\n  - 학습");
   });
 
+  it("creates and updates work-plan progress as machine-readable frontmatter", async () => {
+    const { tasks, store, app } = build();
+    const task = await tasks.createTask({
+      title: "계획 있는 작업",
+      steps: [" 서버 프롬프트 ", "", "QA 환경 검증"],
+    });
+    expect(task.steps).toEqual(["서버 프롬프트", "QA 환경 검증"]);
+    expect(task.currentStep).toBe(1);
+
+    const updated = await tasks.updateTask(task.id, { currentStep: 2 });
+    expect(updated.currentStep).toBe(2);
+    expect(store.getState().tasks.get(task.id)?.currentStep).toBe(2);
+    const raw = await app.vault.read(app.vault.getAbstractFileByPath(task.path) as never);
+    expect(raw).toContain("step1: 서버 프롬프트");
+    expect(raw).toContain("step2: QA 환경 검증");
+    expect(raw).not.toContain("steps:");
+    expect(raw).toContain("currentStep: 2");
+  });
+
   it("setJiraKey updates existing task", async () => {
     const { tasks, store } = build();
     const task = await tasks.createTask({ title: "x" });

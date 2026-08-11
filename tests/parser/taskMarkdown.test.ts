@@ -117,6 +117,54 @@ describe("parseTask", () => {
     expect(parseTask(raw)?.task.remarks).toBe("리뷰 대기 중");
   });
 
+  it("parses work-plan steps and the 1-based current step", () => {
+    const raw = baseRaw.replace(
+      "updatedAt: 2026-05-08T14:45:00.000Z",
+      [
+        "updatedAt: 2026-05-08T14:45:00.000Z",
+        "steps:",
+        "  - 서버 프롬프트",
+        "  - QA 환경 검증",
+        "currentStep: 2",
+      ].join("\n"),
+    );
+    expect(parseTask(raw)?.task).toMatchObject({
+      steps: ["서버 프롬프트", "QA 환경 검증"],
+      currentStep: 2,
+    });
+  });
+
+  it("parses individually numbered step properties", () => {
+    const raw = baseRaw.replace(
+      "updatedAt: 2026-05-08T14:45:00.000Z",
+      [
+        "updatedAt: 2026-05-08T14:45:00.000Z",
+        "step1: 서버 프롬프트",
+        "step2: 트러블 슈팅 문서 작성",
+        "step3: QA 환경 검증",
+        "currentStep: 2",
+      ].join("\n"),
+    );
+    expect(parseTask(raw)?.task).toMatchObject({
+      steps: ["서버 프롬프트", "트러블 슈팅 문서 작성", "QA 환경 검증"],
+      currentStep: 2,
+      passthrough: {},
+    });
+  });
+
+  it("clamps an out-of-range current step and ignores it when steps are absent", () => {
+    const withSteps = baseRaw.replace(
+      "updatedAt: 2026-05-08T14:45:00.000Z",
+      "updatedAt: 2026-05-08T14:45:00.000Z\nsteps:\n  - 하나\n  - 둘\ncurrentStep: 99",
+    );
+    expect(parseTask(withSteps)?.task.currentStep).toBe(2);
+    const withoutSteps = baseRaw.replace(
+      "updatedAt: 2026-05-08T14:45:00.000Z",
+      "updatedAt: 2026-05-08T14:45:00.000Z\ncurrentStep: 1",
+    );
+    expect(parseTask(withoutSteps)?.task.currentStep).toBeNull();
+  });
+
   it("treats absent or empty remarks as null", () => {
     expect(parseTask(baseRaw)?.task.remarks).toBeNull();
     const empty = baseRaw.replace(
@@ -225,6 +273,32 @@ describe("serializeTask", () => {
     const task = makeTask({ remarks: "리뷰 전 확인 필요" });
     const out = serializeTask(task, "본문\n");
     expect(out).toContain("remarks: 리뷰 전 확인 필요");
+  });
+
+  it("serializes work-plan steps as individually numbered properties", () => {
+    const task = makeTask({
+      steps: ["서버 프롬프트", "QA 환경 검증"],
+      currentStep: 2,
+    });
+    const out = serializeTask(task, "본문\n");
+    expect(out).toContain("step1: 서버 프롬프트");
+    expect(out).toContain("step2: QA 환경 검증");
+    expect(out).not.toContain("steps:");
+    expect(out).toContain("currentStep: 2");
+    expect(parseTask(out)?.task).toMatchObject({ steps: task.steps, currentStep: 2 });
+  });
+
+  it("migrates the legacy steps list to numbered properties on write", () => {
+    const legacy = baseRaw.replace(
+      "updatedAt: 2026-05-08T14:45:00.000Z",
+      "updatedAt: 2026-05-08T14:45:00.000Z\nsteps:\n  - 하나\n  - 둘\ncurrentStep: 1",
+    );
+    const parsed = parseTask(legacy)!;
+    const task = { ...parsed.task, knownMtime: 0, path: "TaskMaster/Tasks/legacy.md" };
+    const out = serializeTask(task, parsed.body);
+    expect(out).toContain("step1: 하나");
+    expect(out).toContain("step2: 둘");
+    expect(out).not.toContain("steps:");
   });
 
   it("excludes remarks when null", () => {

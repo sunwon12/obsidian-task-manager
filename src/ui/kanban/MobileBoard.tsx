@@ -225,6 +225,8 @@ const MobileCard: React.FC<{ taskId: TaskId }> = ({ taskId }) => {
     jiraKey: string | null;
     remarks: string | null;
     tags: string[];
+    steps: string[];
+    currentStep: number | null;
   }): Promise<void> {
     await services.taskService.updateTask(taskId, input);
   }

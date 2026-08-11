@@ -72,6 +72,8 @@ export const KanbanCard: React.FC<Props> = ({ taskId }) => {
     jiraKey: string | null;
     remarks: string | null;
     tags: string[];
+    steps: string[];
+    currentStep: number | null;
   }): Promise<void> {
     if (!task) return;
     await services.taskService.updateTask(taskId, input);

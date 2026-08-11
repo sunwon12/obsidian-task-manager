@@ -104,46 +104,101 @@ const TimerBanner: React.FC<{
       data-testid="tm-timer-banner"
       role="status"
       aria-label={timer.title}
-      className="tm-timer-banner tm-flex tm-items-center tm-gap-3 tm-rounded-lg tm-border tm-border-tm-border tm-bg-tm-bg tm-px-3 tm-py-2 tm-shadow-lg tm-select-none tm-cursor-grab"
+      className="tm-timer-banner tm-rounded-lg tm-border tm-border-tm-border tm-bg-tm-bg tm-px-3 tm-py-2 tm-shadow-lg tm-select-none tm-cursor-grab"
       style={style}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
     >
-      <div className="tm-flex-1 tm-min-w-0">
-        <div className="tm-text-sm tm-font-medium tm-truncate tm-text-tm-text">
-          {timer.title}
+      <div className="tm-flex tm-items-center tm-gap-3">
+        <div className="tm-flex-1 tm-min-w-0">
+          <div className="tm-text-sm tm-font-medium tm-truncate tm-text-tm-text">
+            {timer.title}
+          </div>
+          <div className="tm-text-xs tm-text-tm-muted tm-tabular-nums">
+            <span data-testid="tm-timer-elapsed">{formatElapsed(timer.elapsedMs)}</span>
+          </div>
         </div>
-        <div className="tm-text-xs tm-text-tm-muted tm-tabular-nums">
-          <span data-testid="tm-timer-elapsed">{formatElapsed(timer.elapsedMs)}</span>
-        </div>
+
+        {timer.phase === "running" ? (
+          <BannerButton
+            testId="tm-timer-pause"
+            label={t("timer.pause")}
+            onClick={() => service.pause(timer.taskId)}
+          >
+            <Pause size={14} />
+          </BannerButton>
+        ) : (
+          <BannerButton
+            testId="tm-timer-start"
+            label={timer.phase === "paused" ? t("timer.resume") : t("timer.start")}
+            onClick={() => service.start(timer.taskId)}
+          >
+            <Play size={14} />
+          </BannerButton>
+        )}
+        <BannerButton
+          testId="tm-timer-stop"
+          label={t("timer.stop")}
+          onClick={() => void service.stop(timer.taskId)}
+        >
+          <Square size={14} />
+        </BannerButton>
       </div>
 
-      {timer.phase === "running" ? (
-        <BannerButton
-          testId="tm-timer-pause"
-          label={t("timer.pause")}
-          onClick={() => service.pause(timer.taskId)}
+      {timer.steps.length > 0 && (
+        <ol
+          data-testid="tm-timer-steps"
+          aria-label={t("timer.steps")}
+          className="tm-mt-2 tm-border-t tm-border-tm-border tm-pt-2 tm-space-y-1"
         >
-          <Pause size={14} />
-        </BannerButton>
-      ) : (
-        <BannerButton
-          testId="tm-timer-start"
-          label={timer.phase === "paused" ? t("timer.resume") : t("timer.start")}
-          onClick={() => service.start(timer.taskId)}
-        >
-          <Play size={14} />
-        </BannerButton>
+          {timer.steps.map((step, index) => {
+            const number = index + 1;
+            const state = timer.currentStep == null
+              ? "pending"
+              : number < timer.currentStep
+                ? "completed"
+                : number === timer.currentStep
+                  ? "current"
+                  : "pending";
+            const stateLabel = state === "completed"
+              ? t("timer.stepCompleted")
+              : state === "current"
+                ? t("timer.stepCurrent")
+                : t("timer.stepPending");
+            return (
+              <li
+                key={`${number}-${step}`}
+                data-step={number}
+                data-state={state}
+                aria-label={`${number}. ${step}: ${stateLabel}`}
+                className="tm-text-xs tm-leading-5"
+              >
+                <button
+                  type="button"
+                  data-testid={`tm-timer-step-${number}`}
+                  aria-pressed={state === "current"}
+                  onClick={() => void service.selectStep(timer.taskId, number)}
+                  className={
+                    "tm-flex tm-w-full tm-items-start tm-gap-2 tm-rounded tm-px-1 tm-text-left hover:tm-bg-tm-bg-hover " +
+                    (state === "current"
+                      ? "tm-font-semibold tm-text-tm-accent"
+                      : state === "completed"
+                        ? "tm-text-tm-muted"
+                        : "tm-text-tm-text")
+                  }
+                >
+                  <span aria-hidden="true" className="tm-w-4 tm-shrink-0 tm-text-center tm-tabular-nums">
+                    {state === "completed" ? "✓" : state === "current" ? "→" : number}
+                  </span>
+                  <span className={state === "completed" ? "tm-line-through" : ""}>{step}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
       )}
-      <BannerButton
-        testId="tm-timer-stop"
-        label={t("timer.stop")}
-        onClick={() => void service.stop(timer.taskId)}
-      >
-        <Square size={14} />
-      </BannerButton>
     </div>
   );
 };

@@ -19,6 +19,7 @@ import type { TaskRepository } from "../repositories/TaskRepository";
 import type { BoardService } from "../services/BoardService";
 import type { TaskMasterStore } from "../store/taskMasterStore";
 import type { Task } from "../core/types";
+import type { EventBus } from "../core/eventBus";
 
 export class IndexService {
   constructor(
@@ -30,6 +31,7 @@ export class IndexService {
     private readonly boardService: BoardService,
     private readonly meetings: MeetingRepository,
     private readonly projects: ProjectRepository,
+    private readonly events: EventBus,
     private readonly diagnostics: DiagnosticsLog,
     private readonly dataRoot: string,
   ) {}
@@ -164,6 +166,11 @@ export class IndexService {
         path: file.path,
       };
       this.store.getState().upsertTask(next);
+      if (previous) {
+        this.events.emit({ type: "task:updated", task: next, previous });
+      } else {
+        this.events.emit({ type: "task:created", task: next });
+      }
 
       // status, archive, deletion → board reconcile
       const statusChanged = !previous || previous.status !== next.status;

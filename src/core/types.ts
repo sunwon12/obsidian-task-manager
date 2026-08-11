@@ -73,6 +73,10 @@ export interface Task {
   due?: string | null;
   /** 업무, 학습 등 카드 분류용 사용자 태그. */
   tags?: string[];
+  /** 타이머 아래에 순서대로 보여줄 작업 계획. */
+  steps?: string[];
+  /** 1부터 시작하는 현재 작업 단계. 이전 단계는 완료로 표시한다. */
+  currentStep?: number | null;
   /** 검색/카드 preview용 Markdown body 첫 요약. 디스크에는 저장하지 않고 parse/create에서 derive. */
   bodySummary?: string;
   createdAt: IsoDateTime;
@@ -165,6 +169,8 @@ export interface TaskFrontmatterDoc {
   due?: string;
   /** undefined면 frontmatter에서 제거 */
   tags?: string[];
+  /** undefined면 frontmatter에서 제거 */
+  currentStep?: number;
   createdAt: string;
   updatedAt: string;
   /** undefined면 frontmatter에서 제거 */
@@ -203,6 +209,8 @@ export interface CreateTaskInput {
   actualMd?: number | null;
   due?: string | null;
   tags?: string[];
+  steps?: string[];
+  currentStep?: number | null;
   body?: string;
 }
 
@@ -217,6 +225,8 @@ export interface UpdateTaskInput {
   actualMd?: number | null;
   due?: string | null;
   tags?: string[];
+  steps?: string[];
+  currentStep?: number | null;
 }
 
 export interface CreateProjectInput {

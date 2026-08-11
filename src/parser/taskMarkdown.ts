@@ -25,6 +25,9 @@ export function parseTask(raw: string): ParsedTask | null {
   if (!isTaskStatus(status)) return null;
 
   const title = extractTitle(body) || "Untitled";
+  const numberedSteps = extractNumberedSteps(m);
+  // v0.5.0~0.5.1의 steps YAML 목록도 계속 읽어 자동 마이그레이션한다.
+  const steps = numberedSteps.length > 0 ? numberedSteps : normalizeSteps(m["steps"]);
 
   return {
     task: {
@@ -53,6 +56,8 @@ export function parseTask(raw: string): ParsedTask | null {
         ? m["due"].trim()
         : null,
       tags: normalizeTags(m["tags"]),
+      steps,
+      currentStep: normalizeCurrentStep(m["currentStep"], steps),
       bodySummary: extractBodySummary(body),
       createdAt: typeof m["createdAt"] === "string"
         ? (m["createdAt"] as IsoDateTime)
@@ -87,11 +92,18 @@ export function serializeTask(task: Task, body: string): string {
   if (task.actualMd != null) doc.actualMd = task.actualMd;
   if (task.due) doc.due = task.due;
   if (task.tags?.length) doc.tags = normalizeTags(task.tags);
+  const managed = doc as unknown as Record<string, unknown>;
+  normalizeSteps(task.steps).forEach((step, index) => {
+    managed[`step${index + 1}`] = step;
+  });
+  if (task.currentStep != null && task.steps?.length) {
+    doc.currentStep = normalizeCurrentStep(task.currentStep, task.steps) ?? 1;
+  }
   if (task.archivedAt) doc.archivedAt = task.archivedAt;
 
   return serializeFile(
     {
-      managed: doc as unknown as Record<string, unknown>,
+      managed,
       passthrough: task.passthrough,
       fieldOrder: task.fieldOrder,
     },
@@ -132,4 +144,28 @@ function normalizeTags(value: unknown): string[] {
   return [...new Set(value.filter((tag): tag is string => typeof tag === "string")
     .map((tag) => tag.trim().replace(/^#/u, ""))
     .filter(Boolean))];
+}
+
+function normalizeSteps(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((step): step is string => typeof step === "string")
+    .map((step) => step.trim())
+    .filter(Boolean);
+}
+
+function extractNumberedSteps(managed: Record<string, unknown>): string[] {
+  return Object.entries(managed)
+    .flatMap(([key, value]) => {
+      const match = key.match(/^step([1-9]\d*)$/u);
+      if (!match || typeof value !== "string" || !value.trim()) return [];
+      return [{ number: Number(match[1]), value: value.trim() }];
+    })
+    .sort((a, b) => a.number - b.number)
+    .map((entry) => entry.value);
+}
+
+function normalizeCurrentStep(value: unknown, steps: readonly string[]): number | null {
+  if (steps.length === 0 || typeof value !== "number" || !Number.isInteger(value)) return null;
+  return Math.min(Math.max(value, 1), steps.length);
 }

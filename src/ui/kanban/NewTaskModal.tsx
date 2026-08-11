@@ -2,6 +2,7 @@ import * as React from "react";
 import { t } from "../../i18n";
 import { TASK_STATUS_ORDER } from "../../core/types";
 import { statusLabel } from "./statusLabels";
+import { normalizePlanSteps, WorkPlanEditor } from "./WorkPlanEditor";
 import type { Priority, TaskStatus } from "../../core/types";
 
 interface Props {
@@ -15,6 +16,7 @@ interface Props {
     jiraKey: string | null;
     remarks: string | null;
     tags: string[];
+    steps: string[];
   }) => Promise<void> | void;
 }
 
@@ -25,6 +27,7 @@ export const NewTaskModal: React.FC<Props> = ({ onClose, initialStatus = "todo",
   const [jiraKey, setJiraKey] = React.useState("");
   const [remarks, setRemarks] = React.useState("");
   const [tags, setTags] = React.useState("");
+  const [steps, setSteps] = React.useState<string[]>([""]);
   const [submitting, setSubmitting] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const titleId = React.useId();
@@ -59,6 +62,7 @@ export const NewTaskModal: React.FC<Props> = ({ onClose, initialStatus = "todo",
         jiraKey: jiraKey.trim() || null,
         remarks: remarks.trim() || null,
         tags: parseTags(tags),
+        steps: normalizePlanSteps(steps),
       });
     } catch (err) {
       console.error("TaskMaster new task create failed", err);
@@ -133,6 +137,8 @@ export const NewTaskModal: React.FC<Props> = ({ onClose, initialStatus = "todo",
           placeholder={t("modal.task.jiraKeyPlaceholder")}
           className="tm-w-full tm-px-3 tm-py-2 tm-bg-tm-bg-alt tm-border tm-border-tm-border tm-rounded tm-text-tm-text"
         />
+
+        <WorkPlanEditor steps={steps} onChange={setSteps} />
 
         <label htmlFor={remarksId} className="tm-block tm-text-sm tm-mt-3 tm-mb-1">
           {t("modal.task.remarks")}
