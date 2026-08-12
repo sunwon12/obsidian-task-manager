@@ -58,6 +58,7 @@ export function parseTask(raw: string): ParsedTask | null {
       tags: normalizeTags(m["tags"]),
       steps,
       currentStep: normalizeCurrentStep(m["currentStep"], steps),
+      stepSeconds: extractStepSeconds(m, steps.length),
       bodySummary: extractBodySummary(body),
       createdAt: typeof m["createdAt"] === "string"
         ? (m["createdAt"] as IsoDateTime)
@@ -93,8 +94,12 @@ export function serializeTask(task: Task, body: string): string {
   if (task.due) doc.due = task.due;
   if (task.tags?.length) doc.tags = normalizeTags(task.tags);
   const managed = doc as unknown as Record<string, unknown>;
-  normalizeSteps(task.steps).forEach((step, index) => {
+  const normalizedSteps = normalizeSteps(task.steps);
+  const stepSeconds = normalizeStepSeconds(task.stepSeconds, normalizedSteps.length);
+  normalizedSteps.forEach((step, index) => {
     managed[`step${index + 1}`] = step;
+    const seconds = stepSeconds[index] ?? 0;
+    if (seconds > 0) managed[`step${index + 1}Seconds`] = seconds;
   });
   if (task.currentStep != null && task.steps?.length) {
     doc.currentStep = normalizeCurrentStep(task.currentStep, task.steps) ?? 1;
@@ -163,6 +168,25 @@ function extractNumberedSteps(managed: Record<string, unknown>): string[] {
     })
     .sort((a, b) => a.number - b.number)
     .map((entry) => entry.value);
+}
+
+function extractStepSeconds(managed: Record<string, unknown>, stepCount: number): number[] {
+  return Array.from({ length: stepCount }, (_, index) => {
+    const value = managed[`step${index + 1}Seconds`];
+    return typeof value === "number" && Number.isFinite(value) && value > 0
+      ? Math.round(value)
+      : 0;
+  });
+}
+
+function normalizeStepSeconds(value: unknown, stepCount: number): number[] {
+  const values = Array.isArray(value) ? value : [];
+  return Array.from({ length: stepCount }, (_, index) => {
+    const seconds = values[index];
+    return typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0
+      ? Math.round(seconds)
+      : 0;
+  });
 }
 
 function normalizeCurrentStep(value: unknown, steps: readonly string[]): number | null {

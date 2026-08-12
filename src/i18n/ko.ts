@@ -181,6 +181,8 @@ const ko = {
   "timer.stepCurrent": "현재 단계",
   "timer.stepPending": "대기",
   "timer.menu.empty": "진행 중인 타이머 없음",
+  "timer.floating.pin": "컴퓨터 화면에 고정",
+  "timer.floating.unpin": "화면 고정 해제",
 } as const;
 
 export default ko;

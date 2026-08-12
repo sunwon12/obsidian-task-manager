@@ -141,6 +141,7 @@ describe("parseTask", () => {
         "updatedAt: 2026-05-08T14:45:00.000Z",
         "step1: 서버 프롬프트",
         "step2: 트러블 슈팅 문서 작성",
+        "step2Seconds: 37",
         "step3: QA 환경 검증",
         "currentStep: 2",
       ].join("\n"),
@@ -148,6 +149,7 @@ describe("parseTask", () => {
     expect(parseTask(raw)?.task).toMatchObject({
       steps: ["서버 프롬프트", "트러블 슈팅 문서 작성", "QA 환경 검증"],
       currentStep: 2,
+      stepSeconds: [0, 37, 0],
       passthrough: {},
     });
   });
@@ -279,13 +281,20 @@ describe("serializeTask", () => {
     const task = makeTask({
       steps: ["서버 프롬프트", "QA 환경 검증"],
       currentStep: 2,
+      stepSeconds: [12, 34],
     });
     const out = serializeTask(task, "본문\n");
     expect(out).toContain("step1: 서버 프롬프트");
     expect(out).toContain("step2: QA 환경 검증");
+    expect(out).toContain("step1Seconds: 12");
+    expect(out).toContain("step2Seconds: 34");
     expect(out).not.toContain("steps:");
     expect(out).toContain("currentStep: 2");
-    expect(parseTask(out)?.task).toMatchObject({ steps: task.steps, currentStep: 2 });
+    expect(parseTask(out)?.task).toMatchObject({
+      steps: task.steps,
+      currentStep: 2,
+      stepSeconds: [12, 34],
+    });
   });
 
   it("migrates the legacy steps list to numbered properties on write", () => {

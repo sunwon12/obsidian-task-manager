@@ -27,6 +27,7 @@ import { DiagnosticsLog } from "../../../src/core/diagnostics";
 import { TaskRepository, BoardRepository } from "../../../src/repositories";
 import { BoardService, TaskService } from "../../../src/services";
 import type { CreateTaskInput, Task } from "../../../src/core/types";
+import type { TimerFloatingController } from "../../../src/ui/timer/TimerFloatingWindow";
 
 beforeEach(() => {
   vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -51,10 +52,12 @@ function buildServices() {
   return { taskService, timers, store };
 }
 
-async function setup() {
+async function setup(floatingWindow?: TimerFloatingController) {
   const services = buildServices();
   await services.timers.init();
-  const ui = render(<TimerNotificationStack service={services.timers} />);
+  const ui = render(
+    <TimerNotificationStack service={services.timers} floatingWindow={floatingWindow} />,
+  );
 
   /** act로 감싼 태스크 생성 — EventBus → 배너 갱신까지 flush. */
   async function create(input: CreateTaskInput): Promise<Task> {
@@ -66,6 +69,23 @@ async function setup() {
   }
 
   return { ...services, ui, create };
+}
+
+class FakeFloatingController implements TimerFloatingController {
+  open = false;
+  readonly listeners = new Set<() => void>();
+
+  isSupported(): boolean { return true; }
+  isOpen(): boolean { return this.open; }
+  toggle(): boolean {
+    this.open = !this.open;
+    for (const listener of this.listeners) listener();
+    return this.open;
+  }
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
 }
 
 function banners(container: HTMLElement): HTMLElement[] {
@@ -129,11 +149,14 @@ describe("TimerNotificationStack — 배너 스택 (슬랙 알림창 스타일)"
     const plan = s.ui.getByTestId("tm-timer-steps");
     const items = within(plan).getAllByRole("listitem");
     expect(items.map((item) => item.textContent)).toEqual([
-      "✓서버 프롬프트",
-      "→문서 작성",
-      "3QA 환경 검증",
+      "✓서버 프롬프트00:00",
+      "→문서 작성00:00",
+      "3QA 환경 검증00:00",
     ]);
     expect(items.map((item) => item.dataset.state)).toEqual(["completed", "current", "pending"]);
+    const current = s.ui.getByTestId("tm-timer-step-2");
+    expect(current.getAttribute("aria-current")).toBe("step");
+    expect(current.style.backgroundColor).toBe("var(--interactive-accent)");
   });
 
   it("[U3c] 타이머가 돌아가는 중 currentStep이 갱신되면 바로 반영한다", async () => {
@@ -181,6 +204,45 @@ describe("TimerNotificationStack — 배너 스택 (슬랙 알림창 스타일)"
     expect(within(plan).getAllByRole("listitem")).toHaveLength(7);
     expect(plan.className).not.toContain("tm-max-h");
     expect(plan.className).not.toContain("tm-overflow-y-auto");
+  });
+
+  it("[U3f] 긴 단계명은 배너 밖으로 넘치지 않고 말줄임하며 전체 내용을 tooltip에 두는다", async () => {
+    const s = await setup();
+    const longStep = "프론트 리뷰 요청 https://github.com/29CM-Developers/frontend-29cm-admin/pull/12345";
+    await s.create({ title: "긴 단계", status: "doing", steps: [longStep] });
+
+    const button = s.ui.getByTestId("tm-timer-step-1");
+    const label = button.querySelector<HTMLElement>("[title]");
+    expect(button.className).toContain("tm-overflow-hidden");
+    expect(label?.className).toContain("tm-truncate");
+    expect(label?.getAttribute("title")).toBe(longStep);
+  });
+
+  it("[U3g] 실행 중인 현재 단계의 누적 시간을 초 단위로 갱신한다", async () => {
+    vi.useFakeTimers();
+    try {
+      const s = await setup();
+      await s.create({ title: "단계 시간", status: "doing", steps: ["조사", "검증"] });
+      fireEvent.click(s.ui.getByTestId("tm-timer-start"));
+      act(() => vi.advanceTimersByTime(4_000));
+      expect(s.ui.getByTestId("tm-timer-step-elapsed-1").textContent).toBe("00:04");
+      expect(s.ui.getByTestId("tm-timer-step-elapsed-2").textContent).toBe("00:00");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("[U3h] 화면 고정 토글은 별도 막대가 아니라 태스크 타이머 헤더 안에 있다", async () => {
+    const floating = new FakeFloatingController();
+    const s = await setup(floating);
+    await s.create({ title: "외부 고정", status: "doing" });
+
+    const banner = s.ui.getByTestId("tm-timer-banner");
+    const toggle = within(banner).getByTestId("tm-timer-floating-toggle");
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
   });
 });
 

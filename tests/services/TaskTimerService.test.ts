@@ -200,6 +200,102 @@ describe("TaskTimerService — 스타트 / 정지(일시정지)", () => {
   });
 });
 
+describe("TaskTimerService — 단계별 시간 측정·저장", () => {
+  it("[R10b] 단계를 바꾸면 이전 단계 시간을 확정하고 새 단계 측정을 시작한다", async () => {
+    const s = await setup();
+    const task = await s.taskService.createTask({
+      title: "단계 전환", status: "doing", steps: ["조사", "구현", "검증"],
+    });
+    s.timers.start(task.id);
+    s.tick(5_000);
+
+    await s.timers.selectStep(task.id, 2);
+    expect(s.store.getState().tasks.get(task.id)?.stepSeconds).toEqual([5, 0, 0]);
+    s.tick(3_000);
+
+    expect(s.timers.getTimer(task.id)?.stepElapsedMs).toEqual([5_000, 3_000, 0]);
+    expect(s.timers.getTimer(task.id)?.elapsedMs).toBe(8_000);
+  });
+
+  it("[R10c] 일시정지하면 현재 단계 시간을 task의 stepNSeconds에 저장한다", async () => {
+    const s = await setup();
+    const task = await s.taskService.createTask({
+      title: "단계 일시정지", status: "doing", steps: ["조사", "검증"],
+    });
+    s.timers.start(task.id);
+    s.tick(7_000);
+    s.timers.pause(task.id);
+    await flushAsync();
+
+    expect(s.store.getState().tasks.get(task.id)?.stepSeconds).toEqual([7, 0]);
+    s.tick(20_000);
+    expect(s.timers.getTimer(task.id)?.stepElapsedMs).toEqual([7_000, 0]);
+  });
+
+  it("[R10d] 외부 AI가 currentStep을 바꿔도 이전 단계 시간을 저장한다", async () => {
+    const s = await setup();
+    const task = await s.taskService.createTask({
+      title: "AI 단계 전환", status: "doing", steps: ["조사", "검증"],
+    });
+    s.timers.start(task.id);
+    s.tick(9_000);
+
+    await s.taskService.updateTask(task.id, { currentStep: 2 });
+    await flushAsync();
+
+    expect(s.store.getState().tasks.get(task.id)?.stepSeconds).toEqual([9, 0]);
+    s.tick(4_000);
+    expect(s.timers.getTimer(task.id)?.stepElapsedMs).toEqual([9_000, 4_000]);
+  });
+
+  it("[R10e] 스탑 시 마지막 단계까지 초 단위로 확정한다", async () => {
+    const s = await setup();
+    const task = await s.taskService.createTask({
+      title: "단계 종료", status: "doing", steps: ["조사", "검증"],
+    });
+    s.timers.start(task.id);
+    s.tick(2_000);
+    await s.timers.selectStep(task.id, 2);
+    s.tick(6_000);
+
+    await s.timers.stop(task.id);
+
+    expect(s.store.getState().tasks.get(task.id)?.stepSeconds).toEqual([2, 6]);
+  });
+
+  it("[R10f] 종료·리로드 checkpoint는 Stop 없이 전체/단계 시간을 먼저 저장한다", async () => {
+    const s = await setup();
+    const task = await s.taskService.createTask({
+      title: "종료 직전 저장", status: "doing", steps: ["분석", "검증"],
+    });
+    s.timers.start(task.id);
+    s.tick(6_000);
+
+    await s.timers.flushForShutdown();
+
+    expect(s.store.getState().tasks.get(task.id)).toMatchObject({
+      status: "doing",
+      stepSeconds: [6, 0],
+    });
+    expect(s.timers.getTimer(task.id)).toMatchObject({
+      phase: "running",
+      elapsedMs: 6_000,
+      stepElapsedMs: [6_000, 0],
+    });
+    expect(s.saved.at(-1)?.[0]).toMatchObject({
+      taskId: task.id,
+      phase: "running",
+      accumulatedMs: 6_000,
+      runningSince: 6_000,
+      stepAccumulatedMs: [6_000, 0],
+      stepRunningSince: 6_000,
+    });
+
+    s.tick(2_000);
+    expect(s.timers.getTimer(task.id)?.elapsedMs).toBe(8_000);
+  });
+});
+
 describe("TaskTimerService — 스탑 버튼", () => {
   it("[R11] 스탑을 누르면 태스크가 DONE으로 이동하고 타이머(배너)가 사라진다 (카드 요구)", async () => {
     const s = await setup();
@@ -389,6 +485,30 @@ describe("TaskTimerService — 재시작 복원 (persistence)", () => {
     await timers.init();
 
     expect(timers.getTimer(task.id)).toMatchObject({ phase: "paused", elapsedMs: 42_000 });
+  });
+
+  it("[R19b] running 단계 시간도 재시작 사이의 벽시계 시간을 포함해 복원한다", async () => {
+    const g = buildGraph();
+    const task = await g.taskService.createTask({
+      title: "단계 복원", status: "doing", steps: ["조사", "검증"], currentStep: 2,
+    });
+    g.persisted.push({
+      taskId: task.id,
+      phase: "running",
+      accumulatedMs: 3_000,
+      runningSince: 10_000,
+      stepAccumulatedMs: [2_000, 3_000],
+      activeStep: 2,
+      stepRunningSince: 10_000,
+      dismissed: false,
+      enteredDoingAt: 0,
+    });
+    g.setClock(15_000);
+
+    const timers = new TaskTimerService(g.events, g.store, g.taskService, g.port, g.now);
+    await timers.init();
+
+    expect(timers.getTimer(task.id)?.stepElapsedMs).toEqual([2_000, 8_000]);
   });
 
   it("[R20] 저장분의 태스크가 더 이상 DOING이 아니면 복원하지 않는다", async () => {

@@ -10,6 +10,10 @@ import { Notice, Plugin, TFile } from "obsidian";
 import { TaskMasterView, VIEW_TYPE_TASKMASTER } from "./view/TaskMasterView";
 import { mountTimerOverlay } from "./ui/timer/TimerNotificationStack";
 import { mountTimerMenuBar } from "./ui/timer/TimerMenuBar";
+import {
+  createElectronFloatingWindowPort,
+  TimerFloatingWindow,
+} from "./ui/timer/TimerFloatingWindow";
 import { DiagnosticsLog } from "./core/diagnostics";
 import { EventBus } from "./core/eventBus";
 import { initI18n } from "./i18n";
@@ -52,6 +56,7 @@ export default class TaskMasterPlugin extends Plugin {
   private timerService: TaskTimerService | null = null;
   private timerOverlayDispose: (() => void) | null = null;
   private timerMenuBarDispose: (() => void) | null = null;
+  private timerFloatingWindow: TimerFloatingWindow | null = null;
 
   override async onload(): Promise<void> {
     const settingsRepo = new SettingsRepository(this);
@@ -92,6 +97,14 @@ export default class TaskMasterPlugin extends Plugin {
       this.createTimerPersistence(`${dataRoot}/.timers.json`),
     );
     this.timerService = timerService;
+    // 앱 자체 종료에서는 plugin onunload보다 먼저 checkpoint를 시작한다.
+    if (typeof this.registerDomEvent === "function") {
+      this.registerDomEvent(window, "beforeunload", () => {
+        void timerService.flushForShutdown().catch((err: unknown) => {
+          console.error("[TaskMaster] timer beforeunload checkpoint failed", err);
+        });
+      });
+    }
 
     const indexService = new IndexService(
       this.app, this, store,
@@ -165,9 +178,13 @@ export default class TaskMasterPlugin extends Plugin {
         // T-901: bootstrap으로 store가 채워진 뒤에 타이머 복원 + 오버레이 mount.
         try {
           await timerService.init();
-          this.timerOverlayDispose = mountTimerOverlay(timerService);
+          this.timerFloatingWindow = new TimerFloatingWindow(
+            timerService,
+            createElectronFloatingWindowPort(),
+          );
+          this.timerOverlayDispose = mountTimerOverlay(timerService, this.timerFloatingWindow);
           // 배너와 병행하는 맥 메뉴바 표시. 미지원 환경이면 null (배너만 동작).
-          this.timerMenuBarDispose = mountTimerMenuBar(timerService);
+          this.timerMenuBarDispose = mountTimerMenuBar(timerService, this.timerFloatingWindow);
         } catch (err) {
           diagnostics.record({
             kind: "boot",
@@ -200,11 +217,19 @@ export default class TaskMasterPlugin extends Plugin {
    * 여기서는 reorder debounce 잔여만 fire-and-forget으로 flush한다.
    */
   override onunload(): void {
+    const timerService = this.timerService;
+    // plugin reload/disable에서도 UI teardown보다 타이머 checkpoint를 먼저 시작한다.
+    void timerService?.flushForShutdown().catch((err: unknown) => {
+      console.error("[TaskMaster] timer shutdown checkpoint failed", err);
+    });
+    this.timerFloatingWindow?.dispose();
+    this.timerFloatingWindow = null;
     this.timerMenuBarDispose?.();
     this.timerMenuBarDispose = null;
     this.timerOverlayDispose?.();
     this.timerOverlayDispose = null;
-    this.timerService?.dispose();
+    timerService?.dispose();
+    this.timerService = null;
     void this.taskRepo?.flush();
     void this.boardRepo?.flush();
     void this.meetingRepo?.flush();

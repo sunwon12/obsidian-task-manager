@@ -146,6 +146,20 @@ describe("TaskService", () => {
     expect(raw).toContain("currentStep: 2");
   });
 
+  it("단계별 측정 초를 stepNSeconds 숫자 속성으로 저장한다", async () => {
+    const { tasks, app } = build();
+    const task = await tasks.createTask({
+      title: "단계 시간",
+      steps: ["조사", "구현", "검증"],
+      stepSeconds: [5, 61, 0],
+    });
+    expect(task.stepSeconds).toEqual([5, 61, 0]);
+    const raw = await app.vault.read(app.vault.getAbstractFileByPath(task.path) as never);
+    expect(raw).toContain("step1Seconds: 5");
+    expect(raw).toContain("step2Seconds: 61");
+    expect(raw).not.toContain("step3Seconds");
+  });
+
   it("setJiraKey updates existing task", async () => {
     const { tasks, store } = build();
     const task = await tasks.createTask({ title: "x" });

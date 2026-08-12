@@ -19,6 +19,9 @@ import {
   type TaskTimerService,
   type TaskTimerSnapshot,
 } from "../../services/TaskTimerService";
+import type { TimerFloatingController } from "./TimerFloatingWindow";
+
+const GLOBAL_TRAY_KEY = "__taskmasterTimerTray";
 
 // ---------- Port (테스트 주입 지점) ----------
 
@@ -58,11 +61,21 @@ export function menuBarTitle(timers: TaskTimerSnapshot[]): string {
 }
 
 /** dismissed 배너도 메뉴바에는 계속 나온다 — 되살리기(restore) 입구를 겸한다. */
-function buildMenuItems(service: TaskTimerService, timers: TaskTimerSnapshot[]): TrayMenuItem[] {
+function buildMenuItems(
+  service: TaskTimerService,
+  timers: TaskTimerSnapshot[],
+  floatingWindow?: TimerFloatingController,
+): TrayMenuItem[] {
+  const pinItems: TrayMenuItem[] = floatingWindow?.isSupported()
+    ? [{
+        label: floatingWindow.isOpen() ? t("timer.floating.unpin") : t("timer.floating.pin"),
+        click: () => floatingWindow.toggle(),
+      }]
+    : [];
   if (timers.length === 0) {
-    return [{ label: t("timer.menu.empty"), enabled: false }];
+    return [...pinItems, { label: t("timer.menu.empty"), enabled: false }];
   }
-  return timers.map((timer) => ({
+  return [...pinItems, ...timers.map((timer) => ({
     label: `${truncate(timer.title, 28)} — ${formatElapsed(timer.elapsedMs)}`,
     submenu: [
       timer.phase === "running"
@@ -76,7 +89,7 @@ function buildMenuItems(service: TaskTimerService, timers: TaskTimerSnapshot[]):
         ? [{ label: t("timer.restoreBanner"), click: () => service.restore(timer.taskId) }]
         : []),
     ],
-  }));
+  }))];
 }
 
 function truncate(s: string, max: number): string {
@@ -88,11 +101,13 @@ function truncate(s: string, max: number): string {
 export class TimerMenuBar {
   private handle: TrayHandle | null = null;
   private unsubscribe: (() => void) | null = null;
+  private unsubscribeFloating: (() => void) | null = null;
   private intervalId: number | null = null;
 
   constructor(
     private readonly service: TaskTimerService,
     private readonly port: TrayPort,
+    private readonly floatingWindow?: TimerFloatingController,
     private readonly tickMs: number = TIMER_TICK_MS,
   ) {}
 
@@ -104,6 +119,7 @@ export class TimerMenuBar {
     this.handle = handle;
     handle.setToolTip("TaskMaster");
     this.unsubscribe = this.service.subscribe(() => this.update());
+    this.unsubscribeFloating = this.floatingWindow?.subscribe(() => this.update()) ?? null;
     // running 타이머가 있을 때만 초 단위 갱신. 시간 자체는 서비스가 wall-clock으로 계산.
     this.intervalId = window.setInterval(() => {
       if (this.service.getTimers().some((timer) => timer.phase === "running")) this.update();
@@ -116,6 +132,8 @@ export class TimerMenuBar {
   dispose(): void {
     this.unsubscribe?.();
     this.unsubscribe = null;
+    this.unsubscribeFloating?.();
+    this.unsubscribeFloating = null;
     if (this.intervalId != null) {
       window.clearInterval(this.intervalId);
       this.intervalId = null;
@@ -128,13 +146,16 @@ export class TimerMenuBar {
     if (!this.handle) return;
     const timers = this.service.getTimers();
     this.handle.setTitle(menuBarTitle(timers));
-    this.handle.setContextMenu(buildMenuItems(this.service, timers));
+    this.handle.setContextMenu(buildMenuItems(this.service, timers, this.floatingWindow));
   }
 }
 
 /** main.ts 진입점. 미지원 환경이면 null을 반환하고 아무것도 하지 않는다. */
-export function mountTimerMenuBar(service: TaskTimerService): (() => void) | null {
-  const bar = new TimerMenuBar(service, createElectronTrayPort());
+export function mountTimerMenuBar(
+  service: TaskTimerService,
+  floatingWindow?: TimerFloatingController,
+): (() => void) | null {
+  const bar = new TimerMenuBar(service, createElectronTrayPort(), floatingWindow);
   return bar.mount() ? () => bar.dispose() : null;
 }
 
@@ -187,6 +208,10 @@ export function createElectronTrayPort(): TrayPort {
     create(): TrayHandle | null {
       const remote = resolveElectronRemote();
       if (!remote) return null;
+      const globalWindow = window as Window & { [GLOBAL_TRAY_KEY]?: TrayHandle };
+      // hot reload가 이전 dispose를 놓쳐도 renderer마다 status item은 하나만 유지한다.
+      globalWindow[GLOBAL_TRAY_KEY]?.destroy();
+      delete globalWindow[GLOBAL_TRAY_KEY];
       let tray: ElectronTrayLike;
       try {
         tray = new remote.Tray(createTrayImage(remote));
@@ -194,13 +219,19 @@ export function createElectronTrayPort(): TrayPort {
         console.error("[TaskMaster] tray create failed", err);
         return null;
       }
-      return {
+      let handle!: TrayHandle;
+      handle = {
         setTitle: (title) => tray.setTitle(title),
         setToolTip: (tip) => tray.setToolTip(tip),
         setContextMenu: (items) =>
           tray.setContextMenu(remote.Menu.buildFromTemplate(toElectronTemplate(items))),
-        destroy: () => tray.destroy(),
+        destroy: () => {
+          tray.destroy();
+          if (globalWindow[GLOBAL_TRAY_KEY] === handle) delete globalWindow[GLOBAL_TRAY_KEY];
+        },
       };
+      globalWindow[GLOBAL_TRAY_KEY] = handle;
+      return handle;
     },
   };
 }

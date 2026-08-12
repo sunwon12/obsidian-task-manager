@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { App as ObsidianApp } from "obsidian";
 import {
   TimerMenuBar,
+  createElectronTrayPort,
   menuBarTitle,
   mountTimerMenuBar,
   type TrayHandle,
@@ -25,6 +26,7 @@ import { DiagnosticsLog } from "../../../src/core/diagnostics";
 import { TaskRepository, BoardRepository } from "../../../src/repositories";
 import { BoardService, TaskService } from "../../../src/services";
 import type { TaskId } from "../../../src/core/types";
+import type { TimerFloatingController } from "../../../src/ui/timer/TimerFloatingWindow";
 
 beforeEach(() => {
   vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -44,6 +46,22 @@ class FakeTray implements TrayHandle {
 
 function fakePort(tray: FakeTray | null): TrayPort {
   return { create: () => tray };
+}
+
+class FakeFloatingController implements TimerFloatingController {
+  open = false;
+  readonly listeners = new Set<() => void>();
+  isSupported(): boolean { return true; }
+  isOpen(): boolean { return this.open; }
+  toggle(): boolean {
+    this.open = !this.open;
+    for (const listener of this.listeners) listener();
+    return this.open;
+  }
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
 }
 
 /**
@@ -84,6 +102,7 @@ function snap(partial: Partial<TaskTimerSnapshot>): TaskTimerSnapshot {
     title: "테스트",
     steps: [],
     currentStep: null,
+    stepElapsedMs: [],
     phase: "idle",
     elapsedMs: 0,
     dismissed: false,
@@ -215,5 +234,59 @@ describe("TimerMenuBar — 메뉴바 표시 (배너와 병행)", () => {
 
     // jsdom엔 window.require가 없으므로 실제 Electron 경로도 null로 안전하게 끝난다
     expect(mountTimerMenuBar(g.timers)).toBeNull();
+  });
+
+  it("[M9] 메뉴 최상단에서 컴퓨터 화면 고정을 켜고 끌 수 있다", async () => {
+    const g = buildGraph(true);
+    await g.timers.init();
+    await g.taskService.createTask({ title: "고정 메뉴", status: "doing" });
+    const tray = new FakeTray();
+    const floating = new FakeFloatingController();
+    const bar = new TimerMenuBar(g.timers, fakePort(tray), floating);
+    bar.mount();
+
+    expect(tray.items[0]?.label).toMatch(/pin|고정/i);
+    tray.items[0]?.click?.();
+    expect(floating.open).toBe(true);
+    expect(tray.items[0]?.label).toMatch(/unpin|해제/i);
+
+    bar.dispose();
+    expect(floating.listeners.size).toBe(0);
+  });
+
+  it("[M10] hot reload로 tray를 다시 만들면 이전 전역 인스턴스를 제거한다", () => {
+    const created: Array<{ destroyed: boolean }> = [];
+    class FakeElectronTray {
+      destroyed = false;
+      constructor(_image: unknown) { created.push(this); }
+      setTitle(): void {}
+      setToolTip(): void {}
+      setContextMenu(): void {}
+      destroy(): void { this.destroyed = true; }
+    }
+    const remote = {
+      Tray: FakeElectronTray,
+      Menu: { buildFromTemplate: (items: unknown[]) => items },
+      nativeImage: {
+        createEmpty: () => ({ addRepresentation: () => {}, setTemplateImage: () => {} }),
+      },
+    };
+    const target = window as Window & { require?: (id: string) => unknown };
+    const originalRequire = target.require;
+    target.require = () => remote;
+    const canvas = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+    try {
+      const first = createElectronTrayPort().create();
+      const second = createElectronTrayPort().create();
+      expect(created).toHaveLength(2);
+      expect(created[0]?.destroyed).toBe(true);
+      expect(created[1]?.destroyed).toBe(false);
+      second?.destroy();
+      first?.destroy();
+    } finally {
+      canvas.mockRestore();
+      if (originalRequire) target.require = originalRequire;
+      else delete target.require;
+    }
   });
 });

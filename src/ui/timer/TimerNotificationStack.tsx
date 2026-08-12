@@ -14,7 +14,7 @@
 
 import * as React from "react";
 import { createRoot } from "react-dom/client";
-import { Pause, Play, Square } from "lucide-react";
+import { Pause, Pin, PinOff, Play, Square } from "lucide-react";
 import { t } from "../../i18n";
 import {
   SWIPE_DISMISS_THRESHOLD_PX,
@@ -23,15 +23,24 @@ import {
   type TaskTimerService,
   type TaskTimerSnapshot,
 } from "../../services/TaskTimerService";
+import type { TimerFloatingController } from "./TimerFloatingWindow";
 
 export interface TimerNotificationStackProps {
   service: TaskTimerService;
+  floatingWindow?: TimerFloatingController | undefined;
 }
 
-export const TimerNotificationStack: React.FC<TimerNotificationStackProps> = ({ service }) => {
+export const TimerNotificationStack: React.FC<TimerNotificationStackProps> = ({
+  service,
+  floatingWindow,
+}) => {
   const [, force] = React.useReducer((n: number) => n + 1, 0);
 
   React.useEffect(() => service.subscribe(force), [service]);
+  React.useEffect(
+    () => floatingWindow?.subscribe(force),
+    [floatingWindow],
+  );
 
   // running 배너가 보이는 동안만 초 단위 표시 갱신.
   React.useEffect(() => {
@@ -43,13 +52,19 @@ export const TimerNotificationStack: React.FC<TimerNotificationStackProps> = ({ 
     return () => window.clearInterval(id);
   }, [service]);
 
-  const visible = service.getTimers().filter((timer) => !timer.dismissed);
-  if (visible.length === 0) return null;
+  const timers = service.getTimers();
+  const visible = timers.filter((timer) => !timer.dismissed);
+  if (timers.length === 0) return null;
 
   return (
     <div data-testid="tm-timer-stack" className="tm-flex tm-flex-col tm-gap-2">
       {visible.map((timer) => (
-        <TimerBanner key={timer.taskId} service={service} timer={timer} />
+        <TimerBanner
+          key={timer.taskId}
+          service={service}
+          timer={timer}
+          floatingWindow={floatingWindow}
+        />
       ))}
     </div>
   );
@@ -58,7 +73,8 @@ export const TimerNotificationStack: React.FC<TimerNotificationStackProps> = ({ 
 const TimerBanner: React.FC<{
   service: TaskTimerService;
   timer: TaskTimerSnapshot;
-}> = ({ service, timer }) => {
+  floatingWindow?: TimerFloatingController | undefined;
+}> = ({ service, timer, floatingWindow }) => {
   const [dragX, setDragX] = React.useState(0);
   const dragOrigin = React.useRef<number | null>(null);
 
@@ -121,6 +137,16 @@ const TimerBanner: React.FC<{
           </div>
         </div>
 
+        {floatingWindow?.isSupported() && (
+          <BannerButton
+            testId="tm-timer-floating-toggle"
+            label={floatingWindow.isOpen() ? t("timer.floating.unpin") : t("timer.floating.pin")}
+            pressed={floatingWindow.isOpen()}
+            onClick={() => floatingWindow.toggle()}
+          >
+            {floatingWindow.isOpen() ? <PinOff size={14} /> : <Pin size={14} />}
+          </BannerButton>
+        )}
         {timer.phase === "running" ? (
           <BannerButton
             testId="tm-timer-pause"
@@ -179,20 +205,39 @@ const TimerBanner: React.FC<{
                   type="button"
                   data-testid={`tm-timer-step-${number}`}
                   aria-pressed={state === "current"}
+                  aria-current={state === "current" ? "step" : undefined}
                   onClick={() => void service.selectStep(timer.taskId, number)}
+                  style={state === "current" ? {
+                    backgroundColor: "var(--interactive-accent)",
+                    color: "var(--text-on-accent)",
+                  } : undefined}
                   className={
-                    "tm-flex tm-w-full tm-items-start tm-gap-2 tm-rounded tm-px-1 tm-text-left hover:tm-bg-tm-bg-hover " +
+                    "tm-flex tm-w-full tm-min-w-0 tm-items-start tm-gap-2 tm-overflow-hidden tm-rounded tm-px-1 tm-text-left " +
                     (state === "current"
-                      ? "tm-font-semibold tm-text-tm-accent"
+                      ? "tm-font-semibold"
                       : state === "completed"
-                        ? "tm-text-tm-muted"
-                        : "tm-text-tm-text")
+                        ? "tm-bg-tm-bg-alt tm-text-tm-muted hover:tm-bg-tm-bg-hover"
+                        : "tm-bg-tm-bg-alt tm-text-tm-text hover:tm-bg-tm-bg-hover")
                   }
                 >
                   <span aria-hidden="true" className="tm-w-4 tm-shrink-0 tm-text-center tm-tabular-nums">
                     {state === "completed" ? "✓" : state === "current" ? "→" : number}
                   </span>
-                  <span className={state === "completed" ? "tm-line-through" : ""}>{step}</span>
+                  <span
+                    title={step}
+                    className={
+                      "tm-min-w-0 tm-flex-1 tm-truncate " +
+                      (state === "completed" ? "tm-line-through" : "")
+                    }
+                  >
+                    {step}
+                  </span>
+                  <span
+                    data-testid={`tm-timer-step-elapsed-${number}`}
+                    className="tm-ml-auto tm-shrink-0 tm-tabular-nums tm-opacity-80"
+                  >
+                    {formatElapsed(timer.stepElapsedMs[index] ?? 0)}
+                  </span>
                 </button>
               </li>
             );
@@ -207,15 +252,20 @@ const BannerButton: React.FC<{
   testId: string;
   label: string;
   onClick: () => void;
+  pressed?: boolean;
   children: React.ReactNode;
-}> = ({ testId, label, onClick, children }) => (
+}> = ({ testId, label, onClick, pressed, children }) => (
   <button
     type="button"
     data-testid={testId}
     aria-label={label}
+    aria-pressed={pressed}
     title={label}
     onClick={onClick}
-    className="tm-flex tm-h-7 tm-w-7 tm-shrink-0 tm-items-center tm-justify-center tm-rounded-full tm-border tm-border-tm-border tm-bg-tm-bg-alt tm-text-tm-muted hover:tm-bg-tm-bg-hover hover:tm-text-tm-text"
+    className={
+      "tm-flex tm-h-7 tm-w-7 tm-shrink-0 tm-items-center tm-justify-center tm-rounded-full tm-border tm-border-tm-border hover:tm-bg-tm-bg-hover hover:tm-text-tm-text " +
+      (pressed ? "tm-bg-tm-accent tm-text-white" : "tm-bg-tm-bg-alt tm-text-tm-muted")
+    }
   >
     {children}
   </button>
@@ -225,12 +275,15 @@ const BannerButton: React.FC<{
  * document.body에 오버레이 컨테이너를 만들어 스택을 mount한다.
  * @returns unmount + 컨테이너 제거를 수행하는 dispose 함수.
  */
-export function mountTimerOverlay(service: TaskTimerService): () => void {
+export function mountTimerOverlay(
+  service: TaskTimerService,
+  floatingWindow?: TimerFloatingController,
+): () => void {
   const host = document.createElement("div");
   host.className = "taskmaster-root tm-timer-overlay";
   document.body.appendChild(host);
   const root = createRoot(host);
-  root.render(<TimerNotificationStack service={service} />);
+  root.render(<TimerNotificationStack service={service} floatingWindow={floatingWindow} />);
   return () => {
     root.unmount();
     host.remove();

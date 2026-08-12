@@ -183,6 +183,8 @@ const en: Record<keyof typeof ko, string> = {
   "timer.stepCurrent": "Current step",
   "timer.stepPending": "Pending",
   "timer.menu.empty": "No active timers",
+  "timer.floating.pin": "Pin to desktop",
+  "timer.floating.unpin": "Unpin from desktop",
 };
 
 export default en;

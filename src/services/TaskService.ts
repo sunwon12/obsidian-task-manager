@@ -32,6 +32,7 @@ export class TaskService {
     const tags = normalizeTags(input.tags ?? []);
     const steps = normalizeSteps(input.steps ?? []);
     const currentStep = normalizeCurrentStep(input.currentStep, steps, true);
+    const stepSeconds = normalizeStepSeconds(input.stepSeconds, steps.length);
     const draft: Task = {
       schemaVersion: SCHEMA_VERSION,
       id,
@@ -48,6 +49,7 @@ export class TaskService {
       tags,
       steps,
       currentStep,
+      stepSeconds,
       bodySummary: summarizeBody(input.body ?? ""),
       createdAt: nowIso(),
       updatedAt: nowIso(),
@@ -58,7 +60,10 @@ export class TaskService {
         "priority", ...(jiraKey ? ["jiraKey"] : []), ...(remarks ? ["remarks"] : []),
         ...(estimateMd != null ? ["estimateMd"] : []), ...(actualMd != null ? ["actualMd"] : []),
         ...(due ? ["due"] : []), ...(tags.length ? ["tags"] : []),
-        ...steps.map((_, index) => `step${index + 1}`),
+        ...steps.flatMap((_, index) => [
+          `step${index + 1}`,
+          ...(stepSeconds[index] ? [`step${index + 1}Seconds`] : []),
+        ]),
         ...(currentStep != null ? ["currentStep"] : []),
         "createdAt", "updatedAt",
       ],
@@ -165,6 +170,7 @@ export class TaskService {
           ...next,
           steps,
           currentStep: normalizeCurrentStep(next.currentStep, steps, true),
+          stepSeconds: normalizeStepSeconds(next.stepSeconds, steps.length),
         };
       }
     }
@@ -172,6 +178,13 @@ export class TaskService {
     if (hasOwn(input, "currentStep")) {
       const currentStep = normalizeCurrentStep(input.currentStep, next.steps ?? [], false);
       if (currentStep !== (next.currentStep ?? null)) next = { ...next, currentStep };
+    }
+
+    if (hasOwn(input, "stepSeconds")) {
+      const stepSeconds = normalizeStepSeconds(input.stepSeconds, next.steps?.length ?? 0);
+      if (stepSeconds.join("\u0000") !== (next.stepSeconds ?? []).join("\u0000")) {
+        next = { ...next, stepSeconds };
+      }
     }
 
     if (next === previous) return previous;
@@ -300,4 +313,16 @@ function normalizeCurrentStep(
   if (steps.length === 0) return null;
   if (value == null || !Number.isInteger(value)) return defaultToFirst ? 1 : null;
   return Math.min(Math.max(value, 1), steps.length);
+}
+
+function normalizeStepSeconds(
+  values: readonly number[] | null | undefined,
+  stepCount: number,
+): number[] {
+  return Array.from({ length: stepCount }, (_, index) => {
+    const seconds = values?.[index];
+    return typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0
+      ? Math.round(seconds)
+      : 0;
+  });
 }

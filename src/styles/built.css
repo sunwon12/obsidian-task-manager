@@ -56,6 +56,9 @@
 .tm-ml-2 {
   margin-left: 0.5rem;
 }
+.tm-ml-auto {
+  margin-left: auto;
+}
 .tm-mt-0\.5 {
   margin-top: 0.125rem;
 }
@@ -476,6 +479,9 @@
 }
 .tm-line-through {
   text-decoration-line: line-through;
+}
+.tm-opacity-80 {
+  opacity: 0.8;
 }
 .tm-shadow-lg {
   --tw-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);

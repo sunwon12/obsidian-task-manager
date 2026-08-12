@@ -3,9 +3,9 @@ import { parseFile, serializeFile } from "../../src/parser/frontmatter";
 
 describe("parseFile", () => {
   it("treats numbered task step properties as managed fields", () => {
-    const raw = "---\ntype: task\nstep1: 하나\nstep2: 둘\ncustom: keep\n---\n\n# T";
+    const raw = "---\ntype: task\nstep1: 하나\nstep1Seconds: 12\nstep2: 둘\ncustom: keep\n---\n\n# T";
     const parsed = parseFile(raw, "task");
-    expect(parsed.fm.managed).toMatchObject({ step1: "하나", step2: "둘" });
+    expect(parsed.fm.managed).toMatchObject({ step1: "하나", step1Seconds: 12, step2: "둘" });
     expect(parsed.fm.passthrough).toEqual({ custom: "keep" });
   });
 

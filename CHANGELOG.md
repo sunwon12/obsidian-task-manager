@@ -5,6 +5,62 @@ All notable changes to TaskMaster Obsidian plugin will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.4] - 2026-08-12
+
+### Fixed
+
+- Plugin startup and unpin now sweep stale TaskMaster floating windows left by older hot-reloaded
+  plugin instances, so overlapping windows cannot make the unpin action appear ineffective.
+
+## [0.6.3] - 2026-08-12
+
+### Fixed
+
+- Floating-window controls now use a sandbox-safe click bridge instead of relying only on
+  Electron custom-protocol navigation, fixing the unpin (`×`) action on affected Obsidian builds.
+
+## [0.6.2] - 2026-08-12
+
+### Fixed
+
+- The always-on-top desktop timer now accepts mouse input. Work-plan rows select the current
+  step, and compact header controls start/pause, stop, or unpin directly from the floating window.
+
+## [0.6.1] - 2026-08-12
+
+### Added
+
+- The macOS menu-bar menu now includes the same desktop pin/unpin toggle above the task list.
+
+### Fixed
+
+- Obsidian quit, reload, and plugin-disable paths checkpoint running overall/step timers before
+  teardown. Recovery state is written first, then `stepNSeconds` task frontmatter is flushed.
+- Menu-bar tray creation is single-instance across plugin hot reloads, preventing new duplicate
+  status items from accumulating.
+
+## [0.6.0] - 2026-08-12
+
+### Added
+
+- Per-step stopwatch tracking: the active work-plan step accrues time while the task timer runs.
+- Switching steps manually or through an external `currentStep` edit closes the previous segment
+  and starts the next one without resetting the task's overall elapsed time.
+- Step durations survive restart in `.timers.json` and are persisted as numeric frontmatter
+  properties (`step1Seconds`, `step2Seconds`, ...) on step change, pause, and stop.
+- Timer banners show a live elapsed value beside every step.
+- A pin toggle now lives directly in each task timer header. It opens a compact, always-on-top
+  desktop window so task titles, current steps, and live elapsed times remain visible while
+  another application is active. Unsupported mobile/web runtimes hide the toggle.
+
+### Changed
+
+- The current step uses Obsidian's accent-colored background for stronger visual emphasis.
+- Long step labels stay within the banner using a one-line ellipsis; hovering exposes the full
+  value through a tooltip.
+- The desktop pin control shares the existing task timer header instead of adding a separate
+  toolbar above the timer stack.
+
 ## [0.5.3] - 2026-08-12
 
 ### Fixed

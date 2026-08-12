@@ -30,6 +30,8 @@ export interface TaskTimerSnapshot {
   steps: string[];
   /** 1-based 현재 단계. */
   currentStep: number | null;
+  /** 각 단계의 실시간 누적 측정값(ms). steps와 같은 index. */
+  stepElapsedMs: number[];
   phase: TimerPhase;
   /** 호출 시점 기준 누적 측정 시간(ms). running이면 실시간 계산값. */
   elapsedMs: number;
@@ -45,6 +47,10 @@ export interface PersistedTimer {
   accumulatedMs: number;
   /** running이었다면 마지막 running 구간의 시작 epoch ms, 아니면 null. */
   runningSince: number | null;
+  /** v0.6+: 단계별 누적 시간. 이전 저장 파일 호환을 위해 optional. */
+  stepAccumulatedMs?: number[];
+  activeStep?: number | null;
+  stepRunningSince?: number | null;
   dismissed: boolean;
   enteredDoingAt: number;
 }
@@ -93,6 +99,9 @@ interface TimerInternal {
   phase: TimerPhase;
   accumulatedMs: number;
   runningSince: number | null;
+  stepAccumulatedMs: number[];
+  activeStep: number | null;
+  stepRunningSince: number | null;
   dismissed: boolean;
   enteredDoingAt: number;
   /** enteredDoingAt이 같을 때(같은 ms에 연속 생성) 최신 판별용 단조 증가 번호. */
@@ -104,6 +113,8 @@ export class TaskTimerService {
   private readonly listeners = new Set<() => void>();
   private unsubscribe: (() => void) | null = null;
   private seqCounter = 0;
+  private persistQueue: Promise<void> = Promise.resolve();
+  private lifecycleFlush: Promise<void> | null = null;
 
   constructor(
     private readonly events: EventBus,
@@ -129,11 +140,20 @@ export class TaskTimerService {
     for (const p of persisted) {
       const task = state.tasks.get(p.taskId as TaskId);
       if (!task || task.status !== "doing" || task.archivedAt) continue;
+      const stepCount = task.steps?.length ?? 0;
+      const activeStep = validStep(task.currentStep, stepCount);
+      const storedStepMs = normalizeStepMs(task.stepSeconds?.map((seconds) => seconds * 1000), stepCount);
+      const persistedStepMs = normalizeStepMs(p.stepAccumulatedMs, stepCount);
       this.timers.set(task.id, {
         taskId: task.id,
         phase: p.phase,
         accumulatedMs: p.accumulatedMs,
         runningSince: p.phase === "running" ? (p.runningSince ?? this.now()) : null,
+        stepAccumulatedMs: mergeStepMs(storedStepMs, persistedStepMs),
+        activeStep,
+        stepRunningSince: p.phase === "running" && activeStep != null
+          ? (p.activeStep === activeStep ? (p.stepRunningSince ?? p.runningSince ?? this.now()) : this.now())
+          : null,
         dismissed: p.dismissed,
         enteredDoingAt: p.enteredDoingAt,
         seq: this.seqCounter++,
@@ -151,6 +171,22 @@ export class TaskTimerService {
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.listeners.clear();
+  }
+
+  /**
+   * Obsidian 종료·리로드 직전 체크포인트.
+   *
+   * running 구간을 현재 시각까지 누적값으로 확정한 뒤 `.timers.json`을 먼저 저장하고,
+   * 단계별 초를 task frontmatter에도 반영한다. phase는 running으로 유지하므로 다음 로드에서
+   * 기존 복원 규칙대로 이어지며, 사용자가 Stop을 누른 것처럼 DONE 처리되지는 않는다.
+   */
+  flushForShutdown(): Promise<void> {
+    if (this.lifecycleFlush) return this.lifecycleFlush;
+    const operation = this.performLifecycleFlush();
+    this.lifecycleFlush = operation.finally(() => {
+      this.lifecycleFlush = null;
+    });
+    return this.lifecycleFlush;
   }
 
   /** 타이머 목록 변경 알림 구독. dispose 함수를 반환한다. */
@@ -182,7 +218,11 @@ export class TaskTimerService {
     const t = this.timers.get(taskId);
     if (!t || t.phase === "running") return;
     t.phase = "running";
-    t.runningSince = this.now();
+    const now = this.now();
+    t.runningSince = now;
+    const task = this.store.getState().tasks.get(taskId);
+    t.activeStep = validStep(task?.currentStep, task?.steps?.length ?? 0);
+    t.stepRunningSince = t.activeStep != null ? now : null;
     this.notify();
     this.persist();
   }
@@ -191,11 +231,14 @@ export class TaskTimerService {
   pause(taskId: TaskId): void {
     const t = this.timers.get(taskId);
     if (!t || t.phase !== "running") return;
-    t.accumulatedMs = this.elapsedOf(t);
+    const now = this.now();
+    t.accumulatedMs = this.elapsedOf(t, now);
+    this.captureActiveStep(t, now);
     t.runningSince = null;
     t.phase = "paused";
     this.notify();
     this.persist();
+    void this.saveStepSeconds(taskId);
   }
 
   /** 배너에서 단계를 고르면 task frontmatter의 currentStep도 즉시 갱신한다. */
@@ -204,7 +247,14 @@ export class TaskTimerService {
     const task = this.store.getState().tasks.get(taskId);
     const stepCount = task?.steps?.length ?? 0;
     if (!timer || !task || !Number.isInteger(step) || step < 1 || step > stepCount) return;
-    await this.tasks.updateTask(taskId, { currentStep: step });
+    if (task.currentStep === step) return;
+    this.switchActiveStep(timer, step, this.now());
+    this.notify();
+    this.persist();
+    await this.tasks.updateTask(taskId, {
+      currentStep: step,
+      stepSeconds: this.stepSecondsOf(timer, stepCount),
+    });
   }
 
   /**
@@ -220,8 +270,14 @@ export class TaskTimerService {
       return;
     }
 
-    const md = elapsedMsToMd(this.elapsedOf(t));
-    const input: UpdateTaskInput = { status: "done" };
+    const now = this.now();
+    const elapsedMs = this.elapsedOf(t, now);
+    if (t.phase === "running") this.captureActiveStep(t, now);
+    const md = elapsedMsToMd(elapsedMs);
+    const input: UpdateTaskInput = {
+      status: "done",
+      stepSeconds: this.stepSecondsOf(t, task.steps?.length ?? 0),
+    };
     if (md > 0) {
       input.actualMd = Math.round(((task.actualMd ?? 0) + md) * 100) / 100;
     }
@@ -261,7 +317,22 @@ export class TaskTimerService {
         const is = e.task.status === "doing";
         if (!was && is) this.ensureTimer(e.task.id);
         else if (was && !is) this.remove(e.task.id);
-        else if (is && this.timers.has(e.task.id)) this.notify(); // 제목 등 표시 정보 갱신
+        else if (is) {
+          const timer = this.timers.get(e.task.id);
+          if (timer) {
+            const stepCount = e.task.steps?.length ?? 0;
+            timer.stepAccumulatedMs = mergeStepMs(
+              normalizeStepMs(timer.stepAccumulatedMs, stepCount),
+              normalizeStepMs(e.task.stepSeconds?.map((seconds) => seconds * 1000), stepCount),
+            );
+            const nextStep = validStep(e.task.currentStep, stepCount);
+            const changedStep = timer.activeStep !== nextStep;
+            if (changedStep) this.switchActiveStep(timer, nextStep, this.now());
+            this.notify();
+            this.persist();
+            if (changedStep) void this.saveStepSeconds(e.task.id);
+          }
+        }
         break;
       }
       case "task:deleted":
@@ -299,11 +370,19 @@ export class TaskTimerService {
   }
 
   private createTimer(taskId: TaskId): void {
+    const task = this.store.getState().tasks.get(taskId);
+    const stepCount = task?.steps?.length ?? 0;
     this.timers.set(taskId, {
       taskId,
       phase: "idle",
       accumulatedMs: 0,
       runningSince: null,
+      stepAccumulatedMs: normalizeStepMs(
+        task?.stepSeconds?.map((seconds) => seconds * 1000),
+        stepCount,
+      ),
+      activeStep: validStep(task?.currentStep, stepCount),
+      stepRunningSince: null,
       dismissed: false,
       enteredDoingAt: this.now(),
       seq: this.seqCounter++,
@@ -316,11 +395,73 @@ export class TaskTimerService {
     this.persist();
   }
 
-  private elapsedOf(t: TimerInternal): number {
+  private elapsedOf(t: TimerInternal, now = this.now()): number {
     return (
       t.accumulatedMs +
-      (t.phase === "running" && t.runningSince != null ? this.now() - t.runningSince : 0)
+      (t.phase === "running" && t.runningSince != null ? now - t.runningSince : 0)
     );
+  }
+
+  private captureActiveStep(t: TimerInternal, now: number): void {
+    if (t.activeStep != null && t.stepRunningSince != null) {
+      const index = t.activeStep - 1;
+      t.stepAccumulatedMs[index] = (t.stepAccumulatedMs[index] ?? 0) +
+        Math.max(0, now - t.stepRunningSince);
+    }
+    t.stepRunningSince = null;
+  }
+
+  private switchActiveStep(t: TimerInternal, nextStep: number | null, now: number): void {
+    if (t.activeStep === nextStep) return;
+    if (t.phase === "running") this.captureActiveStep(t, now);
+    t.activeStep = nextStep;
+    t.stepRunningSince = t.phase === "running" && nextStep != null ? now : null;
+  }
+
+  private stepElapsedOf(t: TimerInternal, stepCount: number, now = this.now()): number[] {
+    const elapsed = normalizeStepMs(t.stepAccumulatedMs, stepCount);
+    if (t.phase === "running" && t.activeStep != null && t.stepRunningSince != null) {
+      const index = t.activeStep - 1;
+      if (index >= 0 && index < elapsed.length) {
+        elapsed[index] = (elapsed[index] ?? 0) + Math.max(0, now - t.stepRunningSince);
+      }
+    }
+    return elapsed;
+  }
+
+  private stepSecondsOf(t: TimerInternal, stepCount: number): number[] {
+    return this.stepElapsedOf(t, stepCount).map((ms) => ms <= 0 ? 0 : Math.max(1, Math.round(ms / 1000)));
+  }
+
+  private async saveStepSeconds(taskId: TaskId): Promise<void> {
+    const timer = this.timers.get(taskId);
+    const task = this.store.getState().tasks.get(taskId);
+    if (!timer || !task) return;
+    const stepSeconds = this.stepSecondsOf(timer, task.steps?.length ?? 0);
+    if (stepSeconds.join("\u0000") === (task.stepSeconds ?? []).join("\u0000")) return;
+    try {
+      await this.tasks.updateTask(taskId, { stepSeconds });
+    } catch (err) {
+      console.error("[TaskMaster] step duration save failed", err);
+    }
+  }
+
+  private async performLifecycleFlush(): Promise<void> {
+    const now = this.now();
+    for (const timer of this.timers.values()) {
+      if (timer.phase !== "running") continue;
+      timer.accumulatedMs = this.elapsedOf(timer, now);
+      this.captureActiveStep(timer, now);
+      // 실행 상태는 유지하면서 anchor만 체크포인트 시각으로 옮긴다.
+      timer.runningSince = now;
+      timer.stepRunningSince = timer.activeStep != null ? now : null;
+    }
+
+    // 태스크 Markdown 저장보다 복구용 timer checkpoint를 먼저 디스크에 남긴다.
+    await this.enqueuePersist(this.serializeTimers());
+    await Promise.all([...this.timers.keys()].map((taskId) => this.saveStepSeconds(taskId)));
+    // frontmatter 갱신 중 발생한 이벤트 저장 뒤 최종 snapshot을 한 번 더 보장한다.
+    await this.enqueuePersist(this.serializeTimers());
   }
 
   private toSnapshot(t: TimerInternal): TaskTimerSnapshot {
@@ -330,6 +471,7 @@ export class TaskTimerService {
       title: task?.title ?? "",
       steps: task?.steps ?? [],
       currentStep: task?.currentStep ?? null,
+      stepElapsedMs: this.stepElapsedOf(t, task?.steps?.length ?? 0),
       phase: t.phase,
       elapsedMs: this.elapsedOf(t),
       dismissed: t.dismissed,
@@ -348,16 +490,50 @@ export class TaskTimerService {
   }
 
   private persist(): void {
-    const serialized: PersistedTimer[] = [...this.timers.values()].map((t) => ({
+    void this.enqueuePersist(this.serializeTimers());
+  }
+
+  private serializeTimers(): PersistedTimer[] {
+    return [...this.timers.values()].map((t) => ({
       taskId: t.taskId,
       phase: t.phase,
       accumulatedMs: t.accumulatedMs,
       runningSince: t.runningSince,
+      stepAccumulatedMs: [...t.stepAccumulatedMs],
+      activeStep: t.activeStep,
+      stepRunningSince: t.stepRunningSince,
       dismissed: t.dismissed,
       enteredDoingAt: t.enteredDoingAt,
     }));
-    void this.persistence.save(serialized).catch((err) => {
+  }
+
+  /** 저장 요청을 직렬화해 늦게 끝난 과거 write가 종료 checkpoint를 덮지 않게 한다. */
+  private enqueuePersist(serialized: PersistedTimer[]): Promise<void> {
+    const operation = this.persistQueue
+      .catch(() => {})
+      .then(() => this.persistence.save(serialized));
+    this.persistQueue = operation.catch((err) => {
       console.error("[TaskMaster] timer state save failed", err);
     });
+    return operation;
   }
+}
+
+function validStep(value: number | null | undefined, stepCount: number): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= stepCount
+    ? value
+    : null;
+}
+
+function normalizeStepMs(values: readonly number[] | null | undefined, stepCount: number): number[] {
+  return Array.from({ length: stepCount }, (_, index) => {
+    const value = values?.[index];
+    return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
+  });
+}
+
+function mergeStepMs(a: readonly number[], b: readonly number[]): number[] {
+  return Array.from({ length: Math.max(a.length, b.length) }, (_, index) =>
+    Math.max(a[index] ?? 0, b[index] ?? 0),
+  );
 }

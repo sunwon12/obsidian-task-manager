@@ -75,7 +75,8 @@ export function parseFile(raw: string, kind: EntityKind): FrontmatterParseResult
 
 /** task의 step1, step2 ...는 개수가 가변적인 managed field로 취급한다. */
 function isKnownField(kind: EntityKind, key: string): boolean {
-  return KNOWN_FIELDS[kind].has(key) || (kind === "task" && /^step[1-9]\d*$/u.test(key));
+  return KNOWN_FIELDS[kind].has(key) ||
+    (kind === "task" && /^step[1-9]\d*(?:Seconds)?$/u.test(key));
 }
 
 /**

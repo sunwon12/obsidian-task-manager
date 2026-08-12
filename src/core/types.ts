@@ -77,6 +77,8 @@ export interface Task {
   steps?: string[];
   /** 1부터 시작하는 현재 작업 단계. 이전 단계는 완료로 표시한다. */
   currentStep?: number | null;
+  /** 각 작업 단계에서 측정한 누적 시간(초). steps와 같은 index를 쓴다. */
+  stepSeconds?: number[];
   /** 검색/카드 preview용 Markdown body 첫 요약. 디스크에는 저장하지 않고 parse/create에서 derive. */
   bodySummary?: string;
   createdAt: IsoDateTime;
@@ -211,6 +213,7 @@ export interface CreateTaskInput {
   tags?: string[];
   steps?: string[];
   currentStep?: number | null;
+  stepSeconds?: number[];
   body?: string;
 }
 
@@ -227,6 +230,7 @@ export interface UpdateTaskInput {
   tags?: string[];
   steps?: string[];
   currentStep?: number | null;
+  stepSeconds?: number[];
 }
 
 export interface CreateProjectInput {
