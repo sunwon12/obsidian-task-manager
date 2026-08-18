@@ -255,10 +255,10 @@ describe("BoardRepository.queueWrite + flush", () => {
       updatedAt: "2026-05-09T00:00:00.000Z" as IsoDateTime,
     };
     repo.queueWrite(board);
-    // 아직 디스크에 없음
-    expect(app.vault.getAbstractFileByPath(BOARD_PATH)).toBeNull();
+    // 아직 디스크에 없음. `.board.json`은 vault 인덱스에 안 잡히므로 adapter로 확인한다.
+    await expect(app.vault.adapter.exists(BOARD_PATH)).resolves.toBe(false);
     await vi.advanceTimersByTimeAsync(DEBOUNCE + 50);
-    expect(app.vault.getAbstractFileByPath(BOARD_PATH)).not.toBeNull();
+    await expect(app.vault.adapter.exists(BOARD_PATH)).resolves.toBe(true);
     vi.useRealTimers();
   });
 
@@ -282,10 +282,44 @@ describe("BoardRepository.queueWrite + flush", () => {
     repo.queueWrite(b2);
     await vi.advanceTimersByTimeAsync(DEBOUNCE + 50);
 
-    const file = app.vault.getAbstractFileByPath(BOARD_PATH);
-    const content = await app.vault.read(file as never);
+    const content = await app.vault.adapter.read(BOARD_PATH);
     expect(content).toContain('"updatedAt": "t2"');
     vi.useRealTimers();
+  });
+});
+
+describe("BoardRepository — 점(.)으로 시작하는 상태 파일 (2026-08-18 실사고)", () => {
+  it("저장한 보드를 그대로 다시 읽는다 — vault 인덱스를 거치지 않는다", async () => {
+    // `.board.json`은 Obsidian vault 인덱스에 안 잡혀 getAbstractFileByPath가 늘 null이었다.
+    // 그래서 persist는 create 분기로만 가 "File already exists"로 매번 실패했고,
+    // tryLoad도 못 읽어 보드가 부팅마다 tasks에서 재구축됐다.
+    vi.useFakeTimers();
+    const app = new App();
+    const { repo } = makeRepo(app);
+    const id = newId("task") as TaskId;
+    const saved: BoardState = {
+      version: 1,
+      columns: [
+        { id: "todo", title: "Todo", taskIds: [id] },
+        { id: "doing", title: "Doing", taskIds: [] },
+        { id: "done", title: "Done", taskIds: [] },
+      ],
+      updatedAt: "2026-08-18T00:00:00.000Z" as IsoDateTime,
+    };
+
+    repo.queueWrite(saved);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE + 50);
+    // 같은 파일에 두 번째 쓰기도 실패하지 않는다
+    repo.queueWrite({ ...saved, updatedAt: "2026-08-18T01:00:00.000Z" as IsoDateTime });
+    await vi.advanceTimersByTimeAsync(DEBOUNCE + 50);
+    vi.useRealTimers();
+
+    // 두 번째 쓰기가 디스크에 반영됐다 (예전엔 여기서 File already exists)
+    await expect(app.vault.adapter.read(BOARD_PATH))
+      .resolves.toContain('"updatedAt": "2026-08-18T01:00:00.000Z"');
+    // 재구축이 아니라 저장본을 읽어 온다 (reconcile이 updatedAt은 새로 찍는다)
+    const reloaded = await repo.loadOrRebuild([makeTask(id)]);
+    expect(taskIds(reloaded, "todo")).toEqual([id]);
   });
 });
 

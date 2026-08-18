@@ -212,6 +212,36 @@ describe("IndexService event handlers", () => {
     expect(taskIds(store.getState().board, "todo")).toContain("task_01HX7SM2J6K4XQ7EV6C8T92PPW");
   });
 
+  it("외부에서 나타난 task도 저장 가능해야 한다 — path 인덱스 등록 (2026-08-18 실사고)", async () => {
+    // store에만 넣고 repository의 path 인덱스에 등록하지 않으면, 이후 모든 저장이
+    // `Unknown task id`로 실패하고 retry queue에 남아 Notice가 무한 반복됐다.
+    const { app, idx, tasks, store } = build();
+    await idx.bootstrap();
+    const id = "task_01HX7SM2J6K4XQ7EV6C8T92PPX" as TaskId;
+    const raw = [
+      "---",
+      "schemaVersion: 1",
+      `id: ${id}`,
+      "type: task",
+      "status: todo",
+      "createdAt: 2026-08-18T00:00:00.000Z",
+      "updatedAt: 2026-08-18T00:00:00.000Z",
+      "---",
+      "",
+      "# 밖에서 고친 task",
+      "",
+    ].join("\n");
+    const file = await app.vault.create(`${TASKS}/repaired.md`, raw);
+
+    await idx.handleCreateForTest(file as never);
+
+    expect(store.getState().tasks.get(id)).toBeTruthy();
+    // 저장이 실제로 성립한다 (예전엔 여기서 Unknown task id로 던졌다)
+    await expect(tasks.updateTitle(id, "이름 변경")).resolves.toMatchObject({
+      title: "이름 변경",
+    });
+  });
+
   it("handleCreate ignores non-markdown or non-managed files", async () => {
     const { app, idx, store } = build();
     await idx.bootstrap();

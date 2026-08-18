@@ -5,6 +5,21 @@ All notable changes to TaskMaster Obsidian plugin will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] - 2026-08-18
+
+### Fixed
+
+- A task file that first became readable while the plugin was running — created outside the plugin,
+  restored from git, or repaired by hand — landed in the store without being registered in the
+  repository's path index. Every later save for it then failed with `Unknown task id`, was requeued,
+  and repeated "failed to save changes" indefinitely. The vault create/modify handlers now register
+  the path, for meetings as well as tasks.
+- `.board.json` and `.timers.json` begin with a dot, so Obsidian's vault index never lists them.
+  Looking them up by path always returned nothing, which sent every write down the create branch and
+  failed with "File already exists" once the file existed — the board had not been persisted since
+  2026-08-07 and timer state was never restored. Both now read and write through the vault adapter,
+  which addresses files by path instead of going through the index.
+
 ## [0.7.1] - 2026-08-18
 
 ### Fixed

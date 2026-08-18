@@ -6,7 +6,7 @@
 // - View 등록 + ribbon icon + command palette
 // - onunload sync flush (ADR-0004)
 
-import { Notice, Plugin, TFile } from "obsidian";
+import { Notice, Plugin } from "obsidian";
 import { TaskMasterView, VIEW_TYPE_TASKMASTER } from "./view/TaskMasterView";
 import { mountTimerOverlay } from "./ui/timer/TimerNotificationStack";
 import { mountTimerMenuBar } from "./ui/timer/TimerMenuBar";
@@ -239,11 +239,13 @@ export default class TaskMasterPlugin extends Plugin {
   /** T-901: .timers.json 어댑터. 없으면 빈 상태, 파손이면 무시하고 새로 시작한다. */
   private createTimerPersistence(timersPath: string): TimerPersistencePort {
     return {
+      // `.timers.json`은 점으로 시작해 vault 인덱스에 없다. getAbstractFileByPath로
+      // 찾으면 항상 null이라 load는 늘 빈 상태를 주고 save는 create로만 가서
+      // "File already exists"를 30초마다 뱉었다. adapter로 경로에 직접 읽고 쓴다.
       load: async (): Promise<PersistedTimer[]> => {
-        const file = this.app.vault.getAbstractFileByPath(timersPath);
-        if (!(file instanceof TFile)) return [];
         try {
-          const parsed = JSON.parse(await this.app.vault.read(file)) as {
+          if (!(await this.app.vault.adapter.exists(timersPath))) return [];
+          const parsed = JSON.parse(await this.app.vault.adapter.read(timersPath)) as {
             timers?: PersistedTimer[];
           };
           return Array.isArray(parsed?.timers) ? parsed.timers : [];
@@ -253,9 +255,7 @@ export default class TaskMasterPlugin extends Plugin {
       },
       save: async (timers): Promise<void> => {
         const json = JSON.stringify({ version: 1, timers }, null, 2);
-        const file = this.app.vault.getAbstractFileByPath(timersPath);
-        if (file instanceof TFile) await this.app.vault.modify(file, json);
-        else await this.app.vault.create(timersPath, json);
+        await this.app.vault.adapter.write(timersPath, json);
       },
     };
   }

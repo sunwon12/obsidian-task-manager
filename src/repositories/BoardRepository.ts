@@ -7,7 +7,7 @@
 // - resolveSyncConflict: ADR-0002 정책 (winner + 누락 taskId append)
 // - queueWrite + flush: debounce 처리
 
-import { TFile, normalizePath, type App } from "obsidian";
+import { normalizePath, type App } from "obsidian";
 import type { DiagnosticsLog } from "../core/diagnostics";
 import { nowIso } from "../core/time";
 import { DEFAULT_BOARD_COLUMN_DEFS, isTaskStatus } from "../core/types";
@@ -38,10 +38,11 @@ export class BoardRepository {
   }
 
   private async tryLoad(): Promise<BoardState | null> {
-    const file = this.app.vault.getAbstractFileByPath(this.boardPath);
-    if (!(file instanceof TFile)) return null;
+    // persist와 같은 이유로 adapter를 쓴다 — 인덱스로 찾으면 항상 null이라
+    // 저장한 보드를 다시 읽지 못하고 매번 tasks에서 재구축했다.
     try {
-      const raw = await this.app.vault.read(file);
+      if (!(await this.app.vault.adapter.exists(this.boardPath))) return null;
+      const raw = await this.app.vault.adapter.read(this.boardPath);
       const parsed = JSON.parse(raw) as unknown;
       if (!isBoardState(parsed)) return null;
       return parsed;
@@ -165,15 +166,15 @@ export class BoardRepository {
     return this.writeInFlight;
   }
 
+  /**
+   * `.board.json`은 점으로 시작해 Obsidian vault 인덱스에 잡히지 않는다.
+   * getAbstractFileByPath가 항상 null이라 create 분기로만 가고, 파일은 디스크에
+   * 실재하므로 "File already exists"로 매번 실패했다 — 보드가 2026-08-07 이후
+   * 한 번도 저장되지 않았다. adapter는 인덱스를 거치지 않고 경로로 직접 쓴다.
+   */
   private async persist(board: BoardState): Promise<void> {
     const json = JSON.stringify(board, null, 2);
-    const path = normalizePath(this.boardPath);
-    const file = this.app.vault.getAbstractFileByPath(path);
-    if (file instanceof TFile) {
-      await this.app.vault.modify(file, json);
-    } else {
-      await this.app.vault.create(path, json);
-    }
+    await this.app.vault.adapter.write(normalizePath(this.boardPath), json);
   }
 }
 

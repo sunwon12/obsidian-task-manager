@@ -166,6 +166,11 @@ export class IndexService {
         path: file.path,
       };
       this.store.getState().upsertTask(next);
+      // store에만 넣고 끝내면 repository의 path 인덱스에는 없는 태스크가 된다.
+      // 그러면 이후 모든 저장이 `Unknown task id`로 영구 실패하고, 실패분은
+      // retry queue로 환원되어 "failed to save changes"가 무한 반복된다
+      // (2026-08-18 실사고: 깨졌던 파일을 디스크에서 고치자 이 경로로 들어왔다).
+      this.tasks.updatePath(next.id, file.path);
       if (previous) {
         this.events.emit({ type: "task:updated", task: next, previous });
       } else {
@@ -195,6 +200,7 @@ export class IndexService {
       if (!parsed) return;
       const next = { ...parsed.meeting, knownMtime: file.stat.mtime, path: file.path };
       this.store.getState().upsertMeeting(next);
+      this.meetings.updatePath(next.id, file.path);
     } catch (err) {
       this.diagnostics.record({
         kind: "parse", path: file.path, message: "meeting meta handler failed",

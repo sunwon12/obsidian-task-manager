@@ -53,6 +53,23 @@ export class Vault {
   private contents = new Map<string, string>();
   private listeners = new Map<string, Set<(...args: unknown[]) => void>>();
 
+  /**
+   * 점(.)으로 시작하는 내부 상태 파일(.board.json/.timers.json)은 실제 Obsidian에서
+   * vault 인덱스에 잡히지 않아 adapter로만 접근할 수 있다. 같은 contents 맵을 보되
+   * 인덱스(files)를 거치지 않는 경로를 그대로 재현한다.
+   */
+  readonly adapter = {
+    exists: async (path: string): Promise<boolean> => this.contents.has(path),
+    read: async (path: string): Promise<string> => {
+      const content = this.contents.get(path);
+      if (content == null) throw new Error(`File not found: ${path}`);
+      return content;
+    },
+    write: async (path: string, content: string): Promise<void> => {
+      this.contents.set(path, content);
+    },
+  };
+
   // ---- Files & Folders ----
   getAbstractFileByPath(path: string): TFile | TFolder | null {
     if (this.files.has(path)) return this.files.get(path) ?? null;

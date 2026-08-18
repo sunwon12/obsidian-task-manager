@@ -182,6 +182,18 @@ export class MeetingRepository {
     if (short) this.shortIds.delete(short);
   }
 
+  /** IndexService가 외부 create/modify event를 처리할 때 path 갱신. */
+  updatePath(meetingId: MeetingId, newPath: string): void {
+    const oldPath = this.pathById.get(meetingId);
+    if (oldPath) {
+      const oldShort = this.shortIdOfPath(oldPath);
+      if (oldShort) this.shortIds.delete(oldShort);
+    }
+    this.pathById.set(meetingId, newPath);
+    const short = this.shortIdOfPath(newPath);
+    if (short) this.shortIds.add(short);
+  }
+
   getKnownPath(id: MeetingId): string | undefined {
     return this.pathById.get(id);
   }
