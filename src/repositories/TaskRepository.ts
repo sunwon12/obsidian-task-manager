@@ -94,6 +94,34 @@ export class TaskRepository {
     return tasks;
   }
 
+  /**
+   * 디스크에 실재하는 jiraKey → path. **파싱 실패 파일까지 포함한다.**
+   *
+   * findAll은 schema 위반/YAML 오류 파일을 skip하므로, 그 파일이 들고 있던 jiraKey는
+   * store에서 사라진다. 그 상태로 Jira 동기화가 돌면 같은 이슈를 "없는 것"으로 보고
+   * 새 파일을 만들어, 사용자가 손으로 넣은 step·태그가 든 원본이 유령이 된다.
+   * 그래서 생성 직전 대조는 store가 아니라 디스크 원문(정규식)으로 한다.
+   */
+  async jiraKeysOnDisk(): Promise<Map<string, string>> {
+    const found = new Map<string, string>();
+    const files = this.app.vault
+      .getMarkdownFiles()
+      .filter((f) => f.path.startsWith(this.tasksFolder + "/"));
+    for (const file of files) {
+      try {
+        const raw = await this.app.vault.cachedRead(file);
+        const fence = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/u);
+        const key = fence?.[1]?.match(/^jiraKey:\s*["']?([A-Za-z][A-Za-z0-9_]*-\d+)["']?\s*$/mu);
+        // 같은 key가 여러 파일에 있으면 먼저 만들어진 쪽(경로 사전순 아님)을 유지할 수
+        // 없으므로 첫 발견을 남긴다 — 어느 쪽이든 "이미 있다"는 판정에는 충분하다.
+        if (key?.[1] && !found.has(key[1])) found.set(key[1], file.path);
+      } catch {
+        // 읽기 실패 파일은 판정에서 빠진다. 여기서 throw하면 동기화 전체가 죽는다.
+      }
+    }
+    return found;
+  }
+
   async readBody(taskId: TaskId): Promise<string> {
     const file = this.fileOf(taskId);
     const raw = await this.app.vault.cachedRead(file);

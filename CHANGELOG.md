@@ -5,6 +5,27 @@ All notable changes to TaskMaster Obsidian plugin will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-08-18
+
+### Fixed
+
+- Task fields whose value begins with a YAML flow indicator (for example a work-plan step written
+  as `[AI] 계획 문서 생성`) were written unquoted, which made the whole file fail to parse. The task
+  then dropped out of the index, and the next Jira sync treated its issue as unseen and created a
+  duplicate task file, stranding the steps and tags the user had entered by hand. Scalars are now
+  quoted whenever a parse round-trip does not return the original string.
+- Jira sync now checks the task files on disk — including files it cannot parse — before creating a
+  task, and reports the offending path instead of creating a duplicate.
+
+## [0.7.0] - 2026-08-18
+
+### Added
+
+- The menu bar timer can now choose which display the pinned floating window opens on. With two or
+  more monitors connected, a "Show timer on" submenu lists every display (Automatic follows the
+  current primary display); switching moves an already-pinned window immediately. The choice is
+  stored per machine, and a display that is disconnected falls back to the primary one.
+
 ## [0.6.4] - 2026-08-12
 
 ### Fixed

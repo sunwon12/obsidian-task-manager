@@ -13,6 +13,14 @@ import type {
 import type { BoardService } from "./BoardService";
 import type { JiraIssue } from "../repositories/JiraRepository";
 
+/**
+ * Jira 이슈 1건 반영 결과.
+ * blocked = 디스크엔 같은 jiraKey 파일이 있는데 인덱스에 없어 생성을 막은 경우.
+ */
+export type JiraUpsertOutcome =
+  | { outcome: "created" | "updated" | "skipped" }
+  | { outcome: "blocked"; jiraKey: string; path: string };
+
 export class TaskService {
   constructor(
     private readonly tasks: TaskRepository,
@@ -224,7 +232,15 @@ export class TaskService {
   }
 
   /** Jira issue key를 identity로 하여 기존 카드 갱신 또는 새 카드 생성. archive된 카드는 되살리지 않는다. */
-  async upsertJiraIssue(issue: JiraIssue): Promise<"created" | "updated" | "skipped"> {
+  /** 디스크의 jiraKey 목록. 생성 전 중복 확인용 (파싱 실패 파일 포함). */
+  async jiraKeysOnDisk(): Promise<Map<string, string>> {
+    return this.tasks.jiraKeysOnDisk();
+  }
+
+  async upsertJiraIssue(
+    issue: JiraIssue,
+    onDisk?: ReadonlyMap<string, string>,
+  ): Promise<JiraUpsertOutcome> {
     const existing = [...this.store.getState().tasks.values()]
       .find((task) => task.jiraKey === issue.key);
     const fields = {
@@ -237,13 +253,18 @@ export class TaskService {
       ...(issue.actualMd != null ? { actualMd: issue.actualMd } : {}),
     };
     if (!existing) {
+      // store엔 없는데 디스크엔 있다 = 그 파일이 깨져서 인덱스에 못 올라왔다는 뜻.
+      // 여기서 만들면 사용자가 손으로 넣은 step·태그가 든 원본이 중복에 묻힌다.
+      // 파일을 고칠 때까지 아무것도 안 만드는 쪽이 항상 안전하다.
+      const orphanPath = onDisk?.get(issue.key);
+      if (orphanPath) return { outcome: "blocked", jiraKey: issue.key, path: orphanPath };
       await this.createTask({ ...fields, jiraKey: issue.key, body: issue.description });
-      return "created";
+      return { outcome: "created" };
     }
-    if (existing.archivedAt) return "skipped";
+    if (existing.archivedAt) return { outcome: "skipped" };
     const updated = await this.updateTask(existing.id, fields);
     await this.backfillJiraBody(updated, issue.description);
-    return "updated";
+    return { outcome: "updated" };
   }
 
   /**

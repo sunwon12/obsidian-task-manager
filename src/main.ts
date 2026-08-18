@@ -279,7 +279,13 @@ export default class TaskMasterPlugin extends Plugin {
   private async syncJira(service: JiraSyncService, settings: PluginSettings): Promise<void> {
     try {
       const result = await service.sync(settings);
-      new Notice(`Jira synced: ${result.created} added, ${result.updated} updated`);
+      const blocked = result.blocked > 0
+        ? `, ${result.blocked} blocked (broken task file — see console)`
+        : "";
+      new Notice(
+        `Jira synced: ${result.created} added, ${result.updated} updated${blocked}`,
+        result.blocked > 0 ? 30_000 : undefined,
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       // Notice 는 몇 초 뒤 사라져 증거가 안 남는다. console.error 로도 남겨

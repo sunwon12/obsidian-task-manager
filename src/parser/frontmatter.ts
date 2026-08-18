@@ -185,20 +185,49 @@ function emitYaml(key: string, value: unknown): string {
 }
 
 /**
- * 문자열 scalar emit. YAML special token이 들어 있으면 quote.
+ * 문자열 scalar emit. plain으로 못 쓰는 값은 quote.
  * ISO date / datetime은 unquoted로 두는 게 Obsidian 관례라 예외 처리.
  */
 function emitScalarString(s: string): string {
   if (s.length === 0) return '""';
   if (ISO_DATE_LIKE.test(s)) return s;
-  if (
-    /^[\s"'`#&*!|>%@]|[:#]\s|\s$/.test(s) ||
-    /^(true|false|null|yes|no|on|off|~)$/i.test(s) ||
-    /^-?\d/.test(s)
-  ) {
-    return JSON.stringify(s);
-  }
-  return s;
+  return needsQuote(s) ? JSON.stringify(s) : s;
 }
+
+function needsQuote(s: string): boolean {
+  // ① 다른 파서가 다르게 읽을 값. Obsidian metadataCache는 YAML 1.1이라
+  //    `yes`/`no`/`on`을 boolean으로 읽는다 — 우리 JSON_SCHEMA 왕복만으로는 못 잡는다.
+  if (/^[\s"'`#&*!|>%@]|[:#]\s|\s$/.test(s)) return true;
+  if (/^(true|false|null|yes|no|on|off|~)$/i.test(s)) return true;
+  if (/^-?\d/.test(s)) return true;
+  // ② 우리 파서로도 왕복이 깨지는 값 (flow indicator 등).
+  return !isPlainScalarSafe(s);
+}
+
+/**
+ * plain scalar로 써도 원문 그대로 되읽히는지 **실제로 파싱해서** 확인한다.
+ *
+ * 예전에는 quote가 필요한 문자를 정규식으로 나열했는데, flow indicator(`[`, `{`)가
+ * 빠져 있었다. 그 결과 사용자가 넣은 `step1: [AI] 계획 문서 생성` 같은 값이 unquoted로
+ * 저장되어 **파일 전체의 YAML 파싱이 실패**했고, 그 태스크는 인덱스에서 통째로 빠져
+ * Jira 동기화가 같은 이슈로 새 파일을 또 만들었다 (2026-08-18 실사고).
+ *
+ * 목록을 손으로 관리하면 다음 구멍이 또 생기고 실패가 조용하다. 그래서 규칙을 세지 않고
+ * 왕복(emit → load)이 성립하는지만 본다. 성립하지 않으면 무조건 quote한다.
+ * parseFile과 같은 JSON_SCHEMA로 검사해야 판정이 실제 읽기 경로와 일치한다.
+ */
+function isPlainScalarSafe(s: string): boolean {
+  try {
+    const loaded = yaml.load(`${PROBE_KEY}: ${s}`, { schema: yaml.JSON_SCHEMA });
+    if (!loaded || typeof loaded !== "object" || Array.isArray(loaded)) return false;
+    const entries = Object.entries(loaded as Record<string, unknown>);
+    return entries.length === 1 && entries[0]?.[0] === PROBE_KEY && entries[0]?.[1] === s;
+  } catch {
+    return false;
+  }
+}
+
+/** 왕복 검사용 키. 값 판정에만 쓰이고 파일에 나가지 않는다. */
+const PROBE_KEY = "v";
 
 const ISO_DATE_LIKE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/;

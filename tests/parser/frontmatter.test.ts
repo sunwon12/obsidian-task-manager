@@ -203,6 +203,27 @@ schemaVersion: 1
     expect(out).toContain('val: "yes"');
   });
 
+  it("사용자 step 값이 대괄호로 시작해도 파일 전체 파싱을 깨지 않는다 (2026-08-18 실사고)", () => {
+    // `step1: [AI] 계획 문서 생성`을 unquoted로 쓰면 flow sequence로 읽혀 파일 전체가
+    // YAMLException으로 죽고, 그 태스크는 인덱스에서 사라져 Jira 동기화가 중복을 만들었다.
+    const steps = {
+      step1: "[AI] 계획 문서 생성",
+      step2: "[대기 모바일 확인",   // 대괄호가 안 닫힌 값
+      step3: "[배포]",
+      step4: "{빌드} 대기",
+      step5: "리뷰, 배포",
+    };
+    const out = serializeFile(
+      { managed: {}, passthrough: { ...steps }, fieldOrder: Object.keys(steps) },
+      "",
+    );
+
+    const reparsed = parseFile(out, "task");
+    for (const [key, value] of Object.entries(steps)) {
+      expect(reparsed.fm.managed[key] ?? reparsed.fm.passthrough[key]).toBe(value);
+    }
+  });
+
   it("quotes scalar strings that look like numbers", () => {
     const fm = {
       managed: {},

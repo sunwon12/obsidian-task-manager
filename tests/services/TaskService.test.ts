@@ -175,15 +175,42 @@ describe("TaskService", () => {
       key: "PROJ-42", summary: "Initial summary", statusName: "In Progress",
       description: "", estimateMd: null, actualMd: null, dueDate: null,
     };
-    await expect(tasks.upsertJiraIssue(issue)).resolves.toBe("created");
+    await expect(tasks.upsertJiraIssue(issue)).resolves.toEqual({ outcome: "created" });
     const created = [...store.getState().tasks.values()][0];
     expect(created?.jiraKey).toBe("PROJ-42");
     expect(created?.status).toBe("doing");
 
     await expect(tasks.upsertJiraIssue({ ...issue, summary: "Updated summary", statusName: "Done" }))
-      .resolves.toBe("updated");
+      .resolves.toEqual({ outcome: "updated" });
     expect(store.getState().tasks.get(created!.id)?.title).toBe("Updated summary");
     expect(store.getState().tasks.get(created!.id)?.status).toBe("done");
+  });
+
+  it("깨져서 인덱스에 못 올라온 파일의 jiraKey는 중복 생성하지 않는다 (2026-08-18 실사고)", async () => {
+    const { tasks, store, app } = build();
+    const issue = {
+      key: "BDCC-945", summary: "크리에이터 목록 지면", statusName: "In Progress",
+      description: "", estimateMd: null, actualMd: null, dueDate: null,
+    };
+
+    // 사용자가 손으로 step을 넣다 YAML이 깨진 파일. findAll이 skip하므로 store엔 없다.
+    await app.vault.create(
+      `${TASKS}/깨진 파일 - task_01BROKEN.md`,
+      "---\ntype: task\njiraKey: BDCC-945\nstep1: [AI] 계획 문서 생성\n---\n\n# 원본\n",
+    );
+    expect([...store.getState().tasks.values()]).toHaveLength(0);
+
+    const onDisk = await tasks.jiraKeysOnDisk();
+    await expect(tasks.upsertJiraIssue(issue, onDisk)).resolves.toEqual({
+      outcome: "blocked",
+      jiraKey: "BDCC-945",
+      path: `${TASKS}/깨진 파일 - task_01BROKEN.md`,
+    });
+    // 새 파일이 생기지 않았다 — 원본을 고치면 그대로 이어서 쓴다
+    expect([...store.getState().tasks.values()]).toHaveLength(0);
+
+    // onDisk 대조 없이 호출하던 기존 경로는 그대로 생성한다 (동작 회귀 없음)
+    await expect(tasks.upsertJiraIssue(issue)).resolves.toEqual({ outcome: "created" });
   });
 
   it("upsertJiraIssue carries description/estimateMd/actualMd/due into the task file", async () => {
@@ -215,7 +242,7 @@ describe("TaskService", () => {
     // 타이머 스탑이 기록한 것처럼 로컬에서 actualMd를 채운다 (T-901)
     await tasks.updateTask(created.id, { actualMd: 0.5 });
 
-    await expect(tasks.upsertJiraIssue(issue)).resolves.toBe("updated");
+    await expect(tasks.upsertJiraIssue(issue)).resolves.toEqual({ outcome: "updated" });
     expect(store.getState().tasks.get(created.id)?.actualMd).toBe(0.5);
   });
 
