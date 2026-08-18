@@ -1,6 +1,6 @@
 import type { DiagnosticsLog } from "../core/diagnostics";
 import type { PluginSettings } from "../core/types";
-import type { JiraRepository } from "../repositories/JiraRepository";
+import type { JiraIssue, JiraRepository } from "../repositories/JiraRepository";
 import type { TaskService } from "./TaskService";
 
 export interface JiraSyncResult {
@@ -33,7 +33,7 @@ export class JiraSyncService {
       // store만 믿으면 같은 이슈로 파일을 또 만들게 된다 (2026-08-18 실사고).
       const onDisk = await this.tasks.jiraKeysOnDisk();
       const result: JiraSyncResult = { created: 0, updated: 0, skipped: 0, blocked: 0 };
-      for (const issue of issues) {
+      const apply = async (issue: JiraIssue): Promise<void> => {
         const outcome = await this.tasks.upsertJiraIssue(issue, onDisk);
         result[outcome.outcome] += 1;
         if (outcome.outcome === "blocked") {
@@ -43,6 +43,20 @@ export class JiraSyncService {
             message: `${outcome.jiraKey}: file exists but is not indexed; skipped creating a duplicate`,
           });
         }
+      };
+
+      const seen = new Set<string>();
+      for (const issue of issues) {
+        seen.add(issue.key);
+        await apply(issue);
+      }
+
+      // 사용자 JQL은 보통 완료를 제외한다(기본값 `statusCategory != Done`). 그러면
+      // 티켓이 완료되는 순간 결과에서 빠져 로컬 카드가 옛 상태로 굳는다. 결과에 없는
+      // 로컬 jiraKey를 키로 다시 조회해 상태를 닫는다 — 여긴 갱신만, 생성은 없다.
+      const missing = [...onDisk.keys()].filter((key) => !seen.has(key));
+      for (const issue of await this.jira.searchByKeys(settings, missing)) {
+        await apply(issue);
       }
       return result;
     } catch (err) {

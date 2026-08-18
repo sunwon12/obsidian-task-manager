@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { App } from "obsidian";
-import { TaskService } from "../../src/services/TaskService";
+import { TaskService, jiraStatusToTaskStatus } from "../../src/services/TaskService";
 import { BoardService } from "../../src/services/BoardService";
 import { TaskRepository } from "../../src/repositories/TaskRepository";
 import { BoardRepository } from "../../src/repositories/BoardRepository";
@@ -172,7 +172,7 @@ describe("TaskService", () => {
   it("upsertJiraIssue creates once and then updates the matching Jira card", async () => {
     const { tasks, store } = build();
     const issue = {
-      key: "PROJ-42", summary: "Initial summary", statusName: "In Progress",
+      key: "PROJ-42", summary: "Initial summary", statusName: "In Progress", statusCategoryKey: "",
       description: "", estimateMd: null, actualMd: null, dueDate: null,
     };
     await expect(tasks.upsertJiraIssue(issue)).resolves.toEqual({ outcome: "created" });
@@ -189,7 +189,7 @@ describe("TaskService", () => {
   it("깨져서 인덱스에 못 올라온 파일의 jiraKey는 중복 생성하지 않는다 (2026-08-18 실사고)", async () => {
     const { tasks, store, app } = build();
     const issue = {
-      key: "BDCC-945", summary: "크리에이터 목록 지면", statusName: "In Progress",
+      key: "BDCC-945", summary: "크리에이터 목록 지면", statusName: "In Progress", statusCategoryKey: "",
       description: "", estimateMd: null, actualMd: null, dueDate: null,
     };
 
@@ -218,7 +218,7 @@ describe("TaskService", () => {
     // "이전엔 얼마 걸렸는데 지금은 얼마"라는 견적 회고 자산이 된다.
     const { tasks, store, app } = build();
     await tasks.upsertJiraIssue({
-      key: "BDCC-1", summary: "견적 자산", statusName: "In Progress",
+      key: "BDCC-1", summary: "견적 자산", statusName: "In Progress", statusCategoryKey: "",
       description: "## 배경\n\n갤러리 편성 재구성", estimateMd: 3, actualMd: null, dueDate: "2026-08-09",
     });
     const created = [...store.getState().tasks.values()].find((t) => t.jiraKey === "BDCC-1")!;
@@ -234,7 +234,7 @@ describe("TaskService", () => {
   it("upsertJiraIssue는 Jira actualMd가 비어 있어도 로컬 기록(타이머)을 지우지 않는다", async () => {
     const { tasks, store } = build();
     const issue = {
-      key: "BDCC-2", summary: "보호", statusName: "In Progress",
+      key: "BDCC-2", summary: "보호", statusName: "In Progress", statusCategoryKey: "",
       description: "", estimateMd: null, actualMd: null, dueDate: null,
     };
     await tasks.upsertJiraIssue(issue);
@@ -249,7 +249,7 @@ describe("TaskService", () => {
   it("upsertJiraIssue는 Jira에 actualMd 값이 있으면 여전히 Jira 값으로 갱신한다", async () => {
     const { tasks, store } = build();
     const issue = {
-      key: "BDCC-3", summary: "Jira 우선", statusName: "In Progress",
+      key: "BDCC-3", summary: "Jira 우선", statusName: "In Progress", statusCategoryKey: "",
       description: "", estimateMd: null, actualMd: null, dueDate: null,
     };
     await tasks.upsertJiraIssue(issue);
@@ -263,7 +263,7 @@ describe("TaskService", () => {
   it("upsertJiraIssue backfills an empty body but never overwrites user notes", async () => {
     const { tasks, store, app } = build();
     const issue = {
-      key: "BDCC-2", summary: "본문 백필", statusName: "To Do",
+      key: "BDCC-2", summary: "본문 백필", statusName: "To Do", statusCategoryKey: "",
       description: "", estimateMd: null, actualMd: null, dueDate: null,
     };
     await tasks.upsertJiraIssue(issue); // description 없이 생성 → 본문 비어 있음
@@ -317,5 +317,29 @@ describe("TaskService", () => {
   it("requireTask throws on unknown id", async () => {
     const { tasks } = build();
     await expect(tasks.moveTask("task_unknown" as never, "doing")).rejects.toThrow();
+  });
+});
+
+describe("jiraStatusToTaskStatus — 표시명은 Jira UI 언어를 따라간다 (2026-08-18 실사고)", () => {
+  it("완료 판정은 statusCategory.key로 한다 — 한국어 계정의 '완료'가 todo로 떨어졌다", () => {
+    expect(jiraStatusToTaskStatus("완료", "done")).toBe("done");
+    expect(jiraStatusToTaskStatus("Done", "done")).toBe("done");
+    // category가 비어도 표시명으로 건진다
+    expect(jiraStatusToTaskStatus("완료")).toBe("done");
+    expect(jiraStatusToTaskStatus("종료")).toBe("done");
+  });
+
+  it("category가 구분 못 하는 in-review / hold는 표시명으로 가린다", () => {
+    expect(jiraStatusToTaskStatus("In Developer Test", "indeterminate")).toBe("in-review");
+    expect(jiraStatusToTaskStatus("코드 리뷰", "indeterminate")).toBe("in-review");
+    expect(jiraStatusToTaskStatus("보류", "indeterminate")).toBe("hold");
+    expect(jiraStatusToTaskStatus("In Progress", "indeterminate")).toBe("doing");
+    expect(jiraStatusToTaskStatus("진행 중", "indeterminate")).toBe("doing");
+  });
+
+  it("표시명으로 못 가리면 category로 떨어뜨린다", () => {
+    expect(jiraStatusToTaskStatus("SUGGESTED", "new")).toBe("todo");
+    expect(jiraStatusToTaskStatus("알 수 없는 상태", "indeterminate")).toBe("doing");
+    expect(jiraStatusToTaskStatus("", "")).toBe("todo");
   });
 });

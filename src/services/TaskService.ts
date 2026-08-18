@@ -245,7 +245,7 @@ export class TaskService {
       .find((task) => task.jiraKey === issue.key);
     const fields = {
       title: issue.summary,
-      status: jiraStatusToTaskStatus(issue.statusName),
+      status: jiraStatusToTaskStatus(issue.statusName, issue.statusCategoryKey),
       estimateMd: issue.estimateMd,
       due: issue.dueDate,
       // 타이머(T-901) 등 로컬에서 기록한 actualMd 보호: Jira에 값이 있을 때만 반영하고,
@@ -293,13 +293,33 @@ export class TaskService {
   }
 }
 
-export function jiraStatusToTaskStatus(statusName: string): TaskStatus {
+/**
+ * Jira 상태 → 보드 컬럼.
+ *
+ * 표시명은 Jira UI 언어를 따라간다 — 한국어 계정은 "완료"라 영어 정규식에 걸리지
+ * 않고 전부 todo로 떨어졌다(2026-08-18 실사고: 완료 티켓이 로컬에서 IN REVIEW로
+ * 남거나 todo로 되돌아갔다). 그래서 완료 판정은 언어와 무관한
+ * statusCategory.key를 먼저 본다. 표시명은 category가 구분하지 못하는
+ * in-review / hold를 가려낼 때만 쓴다.
+ */
+export function jiraStatusToTaskStatus(
+  statusName: string,
+  statusCategoryKey = "",
+): TaskStatus {
+  if (statusCategoryKey.trim().toLowerCase() === "done") return "done";
+
   const normalized = statusName.trim().toLocaleLowerCase();
-  if (/(done|closed|resolved|complete)/u.test(normalized)) return "done";
-  if (/(review|qa|test)/u.test(normalized)) return "in-review";
-  if (/(progress|develop|implement|working)/u.test(normalized)) return "doing";
-  if (/(hold|block)/u.test(normalized)) return "hold";
-  return "todo";
+  if (/(done|closed|resolved|complete|완료|종료|해결)/u.test(normalized)) return "done";
+  if (/(review|qa|test|리뷰|검토|테스트|검수)/u.test(normalized)) return "in-review";
+  if (/(hold|block|보류|차단)/u.test(normalized)) return "hold";
+  if (/(progress|develop|implement|working|진행|개발|작업)/u.test(normalized)) return "doing";
+
+  // 표시명으로 못 가리면 category로 떨어뜨린다. 여기도 비면 todo.
+  switch (statusCategoryKey.trim().toLowerCase()) {
+    case "indeterminate": return "doing";
+    case "new": return "todo";
+    default: return "todo";
+  }
 }
 
 function summarizeBody(body: string): string {

@@ -63,7 +63,7 @@ describe("JiraRepository (Node https 직접 전송)", () => {
     expect(calls[0]!.headers["Authorization"]).toBe(`Basic ${btoa("me@example.com:tok")}`);
     expect(JSON.parse(calls[0]!.body)).toMatchObject({ jql: "project = BDCC", maxResults: 100 });
     expect(issues).toEqual([{
-      key: "BDCC-1", summary: "제목", statusName: "In Progress",
+      key: "BDCC-1", summary: "제목", statusName: "In Progress", statusCategoryKey: "",
       description: "", estimateMd: null, actualMd: null, dueDate: null,
     }]);
   });
@@ -79,7 +79,7 @@ describe("JiraRepository (Node https 직접 전송)", () => {
       "summary", "status", "description", "duedate", "customfield_12766", "customfield_12767",
     ]);
     expect(issues[0]).toEqual({
-      key: "BDCC-9", summary: "견적 자산", statusName: "In Progress",
+      key: "BDCC-9", summary: "견적 자산", statusName: "In Progress", statusCategoryKey: "",
       description: "본문입니다", estimateMd: 3, actualMd: null, dueDate: "2026-08-09",
     });
   });

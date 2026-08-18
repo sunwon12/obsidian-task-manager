@@ -6,6 +6,12 @@ export interface JiraIssue {
   key: string;
   summary: string;
   statusName: string;
+  /**
+   * status.statusCategory.key — "new" | "indeterminate" | "done".
+   * 표시명(statusName)은 Jira UI 언어를 따라가지만(한국어 계정은 "완료") 이 키는
+   * 언어와 무관하다. 완료 판정은 이쪽을 먼저 본다.
+   */
+  statusCategoryKey: string;
   /** 이슈 본문(ADF → Markdown 변환). 없으면 "". */
   description: string;
   /** 견적 MD (설정에 필드 id 없으면 null). */
@@ -74,6 +80,21 @@ export class JiraRepository {
   constructor(private readonly post: JiraHttpPost = nodeHttpsPost) {}
 
   async search(settings: PluginSettings): Promise<JiraIssue[]> {
+    return this.runJql(settings, settings.jiraJql.trim());
+  }
+
+  /**
+   * 키로 직접 조회. 사용자 JQL이 완료 이슈를 제외하도록 짜여 있으면(기본값이 그렇다)
+   * 티켓이 완료되는 순간 결과에서 빠져 로컬 카드가 영영 옛 상태로 남는다.
+   * 동기화가 그 구멍을 닫을 때 쓴다.
+   */
+  async searchByKeys(settings: PluginSettings, keys: readonly string[]): Promise<JiraIssue[]> {
+    const safe = keys.filter((key) => JIRA_KEY_RE.test(key));
+    if (safe.length === 0) return [];
+    return this.runJql(settings, `key in (${safe.join(",")})`);
+  }
+
+  private async runJql(settings: PluginSettings, jql: string): Promise<JiraIssue[]> {
     const apiUrl = settings.jiraApiUrl.trim().replace(/\/+$/u, "");
     const token = settings.jiraApiToken.trim();
     if (!apiUrl || !token) throw new Error("Jira API URL and API token are required");
@@ -97,7 +118,7 @@ export class JiraRepository {
         "Content-Type": "application/json",
         Accept: "application/json",
       },
-      JSON.stringify({ jql: settings.jiraJql.trim(), fields, maxResults: 100 }),
+      JSON.stringify({ jql, fields, maxResults: 100 }),
     );
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`Jira request failed (${response.status}): ${response.text.slice(0, 240)}`);
@@ -107,13 +128,19 @@ export class JiraRepository {
       const f = issue.fields ?? {};
       const key = typeof issue.key === "string" ? issue.key.trim() : "";
       const summary = typeof f["summary"] === "string" ? f["summary"].trim() : "";
-      const status = f["status"] as { name?: unknown } | undefined;
+      const status = f["status"] as
+        | { name?: unknown; statusCategory?: { key?: unknown } }
+        | undefined;
       const statusName = typeof status?.name === "string" ? status.name.trim() : "";
+      const categoryKey = typeof status?.statusCategory?.key === "string"
+        ? status.statusCategory.key.trim().toLowerCase()
+        : "";
       if (!key || !summary) return [];
       return [{
         key,
         summary,
         statusName,
+        statusCategoryKey: categoryKey,
         description: adfToMarkdown(f["description"]),
         estimateMd: estimateField ? asFiniteNumber(f[estimateField]) : null,
         actualMd: actualField ? asFiniteNumber(f[actualField]) : null,
@@ -122,6 +149,8 @@ export class JiraRepository {
     });
   }
 }
+
+const JIRA_KEY_RE = /^[A-Za-z][A-Za-z0-9_]*-\d+$/u;
 
 function asFiniteNumber(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;

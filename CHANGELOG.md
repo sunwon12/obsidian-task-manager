@@ -5,6 +5,20 @@ All notable changes to TaskMaster Obsidian plugin will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-08-18
+
+### Fixed
+
+- Completing an issue in Jira left the local card on its old column. Two faults stacked up. The
+  status name follows the Jira UI language, so a Korean account reports "완료" and the English-only
+  regex fell through to `todo`; completion is now decided by `status.statusCategory.key`, which does
+  not change with the language, and the name is only consulted for the in-review / hold distinction
+  that the category cannot express. Korean status names are matched as well.
+- The default JQL excludes completed work (`statusCategory != Done`), so an issue disappears from
+  the sync results at the moment it is finished and its card is never touched again. Sync now looks
+  up the local jiraKeys the query did not return and closes their status from Jira. That pass only
+  updates — it never creates a task.
+
 ## [0.7.2] - 2026-08-18
 
 ### Fixed
