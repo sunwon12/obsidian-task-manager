@@ -48,6 +48,7 @@ export class JiraSyncService {
       const seen = new Set<string>();
       for (const issue of issues) {
         seen.add(issue.key);
+        if (isEpicOrAbove(issue)) { result.skipped += 1; continue; }
         await apply(issue);
       }
 
@@ -56,6 +57,7 @@ export class JiraSyncService {
       // 로컬 jiraKey를 키로 다시 조회해 상태를 닫는다 — 여긴 갱신만, 생성은 없다.
       const missing = [...onDisk.keys()].filter((key) => !seen.has(key));
       for (const issue of await this.jira.searchByKeys(settings, missing)) {
+        if (isEpicOrAbove(issue)) { result.skipped += 1; continue; }
         await apply(issue);
       }
       return result;
@@ -65,4 +67,15 @@ export class JiraSyncService {
       throw err;
     }
   }
+}
+
+/**
+ * 에픽 이상은 개인 보드에 올리지 않는다 — 여러 티켓을 묶는 상자이지 내가 오늘 할 일이
+ * 아니고, 카드로 뜨면 DOING 칸이 실제 작업과 묶음으로 뒤섞인다.
+ * 유형 표시명 대신 hierarchyLevel로 판단한다: 이름은 Jira UI 언어를 타서
+ * 한국어 계정에서는 "에픽"으로 온다 (상태명 "완료"와 같은 함정).
+ * 하위작업(-1)과 일반(0)은 그대로 둔다.
+ */
+function isEpicOrAbove(issue: JiraIssue): boolean {
+  return issue.hierarchyLevel >= 1;
 }

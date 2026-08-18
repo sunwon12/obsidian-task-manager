@@ -5,6 +5,17 @@ All notable changes to TaskMaster Obsidian plugin will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-08-18
+
+### Changed
+
+- Jira sync no longer creates cards for epics. An epic groups other tickets rather than being work to
+  do, so on a personal board it just crowds the DOING column next to the tickets it contains. The
+  test is `issuetype.hierarchyLevel >= 1`, not the type name, because the name follows the Jira UI
+  language and reads "에픽" on a Korean account. Sub-tasks (-1) and ordinary issues (0) are
+  unaffected, and the rule applies to the by-key pass as well, so an existing epic card is not
+  revived by a later sync.
+
 ## [0.8.0] - 2026-08-18
 
 ### Fixed

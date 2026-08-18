@@ -172,7 +172,7 @@ describe("TaskService", () => {
   it("upsertJiraIssue creates once and then updates the matching Jira card", async () => {
     const { tasks, store } = build();
     const issue = {
-      key: "PROJ-42", summary: "Initial summary", statusName: "In Progress", statusCategoryKey: "",
+      key: "PROJ-42", summary: "Initial summary", statusName: "In Progress", statusCategoryKey: "", hierarchyLevel: 0,
       description: "", estimateMd: null, actualMd: null, dueDate: null,
     };
     await expect(tasks.upsertJiraIssue(issue)).resolves.toEqual({ outcome: "created" });
@@ -189,7 +189,7 @@ describe("TaskService", () => {
   it("깨져서 인덱스에 못 올라온 파일의 jiraKey는 중복 생성하지 않는다 (2026-08-18 실사고)", async () => {
     const { tasks, store, app } = build();
     const issue = {
-      key: "BDCC-945", summary: "크리에이터 목록 지면", statusName: "In Progress", statusCategoryKey: "",
+      key: "BDCC-945", summary: "크리에이터 목록 지면", statusName: "In Progress", statusCategoryKey: "", hierarchyLevel: 0,
       description: "", estimateMd: null, actualMd: null, dueDate: null,
     };
 
@@ -218,7 +218,7 @@ describe("TaskService", () => {
     // "이전엔 얼마 걸렸는데 지금은 얼마"라는 견적 회고 자산이 된다.
     const { tasks, store, app } = build();
     await tasks.upsertJiraIssue({
-      key: "BDCC-1", summary: "견적 자산", statusName: "In Progress", statusCategoryKey: "",
+      key: "BDCC-1", summary: "견적 자산", statusName: "In Progress", statusCategoryKey: "", hierarchyLevel: 0,
       description: "## 배경\n\n갤러리 편성 재구성", estimateMd: 3, actualMd: null, dueDate: "2026-08-09",
     });
     const created = [...store.getState().tasks.values()].find((t) => t.jiraKey === "BDCC-1")!;
@@ -234,7 +234,7 @@ describe("TaskService", () => {
   it("upsertJiraIssue는 Jira actualMd가 비어 있어도 로컬 기록(타이머)을 지우지 않는다", async () => {
     const { tasks, store } = build();
     const issue = {
-      key: "BDCC-2", summary: "보호", statusName: "In Progress", statusCategoryKey: "",
+      key: "BDCC-2", summary: "보호", statusName: "In Progress", statusCategoryKey: "", hierarchyLevel: 0,
       description: "", estimateMd: null, actualMd: null, dueDate: null,
     };
     await tasks.upsertJiraIssue(issue);
@@ -249,7 +249,7 @@ describe("TaskService", () => {
   it("upsertJiraIssue는 Jira에 actualMd 값이 있으면 여전히 Jira 값으로 갱신한다", async () => {
     const { tasks, store } = build();
     const issue = {
-      key: "BDCC-3", summary: "Jira 우선", statusName: "In Progress", statusCategoryKey: "",
+      key: "BDCC-3", summary: "Jira 우선", statusName: "In Progress", statusCategoryKey: "", hierarchyLevel: 0,
       description: "", estimateMd: null, actualMd: null, dueDate: null,
     };
     await tasks.upsertJiraIssue(issue);
@@ -263,7 +263,7 @@ describe("TaskService", () => {
   it("upsertJiraIssue backfills an empty body but never overwrites user notes", async () => {
     const { tasks, store, app } = build();
     const issue = {
-      key: "BDCC-2", summary: "본문 백필", statusName: "To Do", statusCategoryKey: "",
+      key: "BDCC-2", summary: "본문 백필", statusName: "To Do", statusCategoryKey: "", hierarchyLevel: 0,
       description: "", estimateMd: null, actualMd: null, dueDate: null,
     };
     await tasks.upsertJiraIssue(issue); // description 없이 생성 → 본문 비어 있음

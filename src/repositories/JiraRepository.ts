@@ -12,6 +12,11 @@ export interface JiraIssue {
    * 언어와 무관하다. 완료 판정은 이쪽을 먼저 본다.
    */
   statusCategoryKey: string;
+  /**
+   * issuetype.hierarchyLevel — 하위작업 -1, 일반 0, 에픽 1, 그 위 2+.
+   * 유형 표시명("Epic"/"에픽")은 Jira UI 언어를 타지만 이 값은 타지 않는다.
+   */
+  hierarchyLevel: number;
   /** 이슈 본문(ADF → Markdown 변환). 없으면 "". */
   description: string;
   /** 견적 MD (설정에 필드 id 없으면 null). */
@@ -107,7 +112,7 @@ export class JiraRepository {
       : `Bearer ${token}`;
     const estimateField = settings.jiraEstimateMdFieldId.trim();
     const actualField = settings.jiraActualMdFieldId.trim();
-    const fields = ["summary", "status", "description", "duedate"];
+    const fields = ["summary", "status", "description", "duedate", "issuetype"];
     if (estimateField) fields.push(estimateField);
     if (actualField) fields.push(actualField);
 
@@ -135,12 +140,16 @@ export class JiraRepository {
       const categoryKey = typeof status?.statusCategory?.key === "string"
         ? status.statusCategory.key.trim().toLowerCase()
         : "";
+      const issueType = f["issuetype"] as { hierarchyLevel?: unknown } | undefined;
+      // 값이 없으면 0(일반)으로 본다 — 판단이 안 서면 거르지 않고 보여주는 쪽이 안전하다.
+      const hierarchyLevel = asFiniteNumber(issueType?.hierarchyLevel) ?? 0;
       if (!key || !summary) return [];
       return [{
         key,
         summary,
         statusName,
         statusCategoryKey: categoryKey,
+        hierarchyLevel,
         description: adfToMarkdown(f["description"]),
         estimateMd: estimateField ? asFiniteNumber(f[estimateField]) : null,
         actualMd: actualField ? asFiniteNumber(f[actualField]) : null,

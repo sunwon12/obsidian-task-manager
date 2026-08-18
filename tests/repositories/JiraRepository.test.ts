@@ -63,7 +63,7 @@ describe("JiraRepository (Node https 직접 전송)", () => {
     expect(calls[0]!.headers["Authorization"]).toBe(`Basic ${btoa("me@example.com:tok")}`);
     expect(JSON.parse(calls[0]!.body)).toMatchObject({ jql: "project = BDCC", maxResults: 100 });
     expect(issues).toEqual([{
-      key: "BDCC-1", summary: "제목", statusName: "In Progress", statusCategoryKey: "",
+      key: "BDCC-1", summary: "제목", statusName: "In Progress", statusCategoryKey: "", hierarchyLevel: 0,
       description: "", estimateMd: null, actualMd: null, dueDate: null,
     }]);
   });
@@ -76,10 +76,10 @@ describe("JiraRepository (Node https 직접 전송)", () => {
       jiraActualMdFieldId: "customfield_12767",
     } as Partial<PluginSettings>));
     expect(JSON.parse(calls[0]!.body).fields).toEqual([
-      "summary", "status", "description", "duedate", "customfield_12766", "customfield_12767",
+      "summary", "status", "description", "duedate", "issuetype", "customfield_12766", "customfield_12767",
     ]);
     expect(issues[0]).toEqual({
-      key: "BDCC-9", summary: "견적 자산", statusName: "In Progress", statusCategoryKey: "",
+      key: "BDCC-9", summary: "견적 자산", statusName: "In Progress", statusCategoryKey: "", hierarchyLevel: 0,
       description: "본문입니다", estimateMd: 3, actualMd: null, dueDate: "2026-08-09",
     });
   });
@@ -87,7 +87,7 @@ describe("JiraRepository (Node https 직접 전송)", () => {
   it("MD 필드 id 미설정이면 커스텀 필드를 요청하지 않는다", async () => {
     const { post, calls } = fakePost({ status: 200, text: OK_BODY });
     await new JiraRepository(post).search(settings());
-    expect(JSON.parse(calls[0]!.body).fields).toEqual(["summary", "status", "description", "duedate"]);
+    expect(JSON.parse(calls[0]!.body).fields).toEqual(["summary", "status", "description", "duedate", "issuetype"]);
   });
 
   it("v2: /rest/api/2/search 로 보낸다", async () => {
