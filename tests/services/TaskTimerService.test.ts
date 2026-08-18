@@ -447,6 +447,33 @@ describe("TaskTimerService — 재시작 복원 (persistence)", () => {
     expect(last[0]).toMatchObject({ taskId: task.id, phase: "running" });
   });
 
+  it("[R19] 저장본을 하나도 못 살렸으면 그 위에 덮어쓰지 않는다 (2026-08-18)", async () => {
+    // 복원 실패 직후 persist가 돌면 파일이 0으로 덮이고, 다음 부팅에 재시도할 근거까지
+    // 사라진다. 원인을 못 찾는 동안 사용자 기록이 계속 날아가는 것을 막는다.
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const g = buildGraph();
+      // 인덱스에 없는 taskId — 실제로 부팅 순서가 어긋나면 이 상태가 된다
+      g.persisted.push({
+        taskId: "task_01GHOST" as TaskId,
+        phase: "running",
+        accumulatedMs: 360_000,
+        runningSince: 10_000,
+        dismissed: false,
+        enteredDoingAt: 8_000,
+      });
+
+      const timers = new TaskTimerService(g.events, g.store, g.taskService, g.port, g.now);
+      await timers.init();
+      await flushAsync();
+
+      expect(g.saved).toHaveLength(0); // 저장 시도 자체가 없다
+      expect(error).toHaveBeenCalled(); // 그리고 이유가 콘솔에 남는다
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it("[R18] running 저장분은 재시작 사이에 흐른 벽시계 시간까지 포함해 이어진다", async () => {
     const g = buildGraph();
     const task = await g.taskService.createTask({ title: "복원", status: "doing" });

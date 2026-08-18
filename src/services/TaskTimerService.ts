@@ -137,9 +137,14 @@ export class TaskTimerService {
     }
 
     const state = this.store.getState();
+    // 복원이 왜 안 됐는지 남긴다. 예전엔 조용히 건너뛰어서 "재시작하면 0초"의 원인을
+    // 파일·코드만 보고는 좁힐 수 없었다 (2026-08-18).
+    const skipped: string[] = [];
     for (const p of persisted) {
       const task = state.tasks.get(p.taskId as TaskId);
-      if (!task || task.status !== "doing" || task.archivedAt) continue;
+      if (!task) { skipped.push(`${p.taskId}: not in index`); continue; }
+      if (task.status !== "doing") { skipped.push(`${p.taskId}: status=${task.status}`); continue; }
+      if (task.archivedAt) { skipped.push(`${p.taskId}: archived`); continue; }
       const stepCount = task.steps?.length ?? 0;
       const activeStep = validStep(task.currentStep, stepCount);
       const storedStepMs = normalizeStepMs(task.stepSeconds?.map((seconds) => seconds * 1000), stepCount);
@@ -159,10 +164,23 @@ export class TaskTimerService {
         seq: this.seqCounter++,
       });
     }
+    const restored = this.timers.size;
     this.reconcile([...state.tasks.values()]);
 
     this.unsubscribe = this.events.subscribe((e) => this.onEvent(e));
     this.notify();
+
+    // 저장본에는 타이머가 있었는데 하나도 못 살렸다면, 여기서 쓰면 그 기록을 0으로
+    // 덮어써 다음 부팅에 재시도할 근거까지 사라진다. 쓰지 않고 남긴다 —
+    // 첫 사용자 조작 때 어차피 저장된다.
+    if (persisted.length > 0 && restored === 0) {
+      console.error(
+        `[TaskMaster] timer restore recovered 0 of ${persisted.length}; keeping the saved file`,
+        skipped,
+      );
+      return;
+    }
+    console.info(`[TaskMaster] timers restored ${restored}/${persisted.length}`, skipped);
     this.persist();
   }
 

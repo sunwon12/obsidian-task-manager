@@ -243,13 +243,22 @@ export default class TaskMasterPlugin extends Plugin {
       // 찾으면 항상 null이라 load는 늘 빈 상태를 주고 save는 create로만 가서
       // "File already exists"를 30초마다 뱉었다. adapter로 경로에 직접 읽고 쓴다.
       load: async (): Promise<PersistedTimer[]> => {
+        // 빈 배열을 조용히 돌려주면 그 직후 저장이 파일을 0으로 덮어 원인이 사라진다.
+        // 왜 비었는지는 반드시 남긴다 (2026-08-18).
         try {
-          if (!(await this.app.vault.adapter.exists(timersPath))) return [];
-          const parsed = JSON.parse(await this.app.vault.adapter.read(timersPath)) as {
-            timers?: PersistedTimer[];
-          };
-          return Array.isArray(parsed?.timers) ? parsed.timers : [];
-        } catch {
+          if (!(await this.app.vault.adapter.exists(timersPath))) {
+            console.error(`[TaskMaster] timer state not found at ${timersPath}`);
+            return [];
+          }
+          const raw = await this.app.vault.adapter.read(timersPath);
+          const parsed = JSON.parse(raw) as { timers?: PersistedTimer[] };
+          if (!Array.isArray(parsed?.timers)) {
+            console.error("[TaskMaster] timer state has no timers array", raw.slice(0, 200));
+            return [];
+          }
+          return parsed.timers;
+        } catch (err) {
+          console.error(`[TaskMaster] timer state read failed at ${timersPath}`, err);
           return [];
         }
       },

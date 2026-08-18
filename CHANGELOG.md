@@ -5,6 +5,17 @@ All notable changes to TaskMaster Obsidian plugin will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] - 2026-08-18
+
+### Fixed
+
+- Restoring timer state on startup could recover nothing and then immediately save over the file,
+  zeroing the elapsed time and destroying the evidence needed to find out why. When the saved file
+  held timers and none of them could be restored, the plugin now leaves the file untouched and
+  reports the reason per timer.
+- Reading `.timers.json` returned an empty list without a word when the file was missing, unreadable,
+  or malformed. Each of those now says so.
+
 ## [0.8.1] - 2026-08-18
 
 ### Changed
