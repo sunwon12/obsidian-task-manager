@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { App as ObsidianApp } from "obsidian";
 import {
   TimerMenuBar,
+  buildPinItems,
   createElectronTrayPort,
   menuBarTitle,
   mountTimerMenuBar,
@@ -26,7 +27,10 @@ import { DiagnosticsLog } from "../../../src/core/diagnostics";
 import { TaskRepository, BoardRepository } from "../../../src/repositories";
 import { BoardService, TaskService } from "../../../src/services";
 import type { TaskId } from "../../../src/core/types";
-import type { TimerFloatingController } from "../../../src/ui/timer/TimerFloatingWindow";
+import type {
+  FloatingDisplay,
+  TimerFloatingController,
+} from "../../../src/ui/timer/TimerFloatingWindow";
 
 beforeEach(() => {
   vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -50,9 +54,17 @@ function fakePort(tray: FakeTray | null): TrayPort {
 
 class FakeFloatingController implements TimerFloatingController {
   open = false;
+  displays: FloatingDisplay[] = [];
+  displayId: string | null = null;
   readonly listeners = new Set<() => void>();
   isSupported(): boolean { return true; }
   isOpen(): boolean { return this.open; }
+  listDisplays(): FloatingDisplay[] { return this.displays; }
+  getDisplayId(): string | null { return this.displayId; }
+  setDisplay(displayId: string | null): void {
+    this.displayId = displayId;
+    for (const listener of this.listeners) listener();
+  }
   toggle(): boolean {
     this.open = !this.open;
     for (const listener of this.listeners) listener();
@@ -252,6 +264,63 @@ describe("TimerMenuBar — 메뉴바 표시 (배너와 병행)", () => {
 
     bar.dispose();
     expect(floating.listeners.size).toBe(0);
+  });
+
+  it("[M11] 모니터가 하나여도 선택 메뉴는 남는다 (열거 실패와 구분되어야 한다)", () => {
+    const floating = new FakeFloatingController();
+    floating.displays = [{ id: "1", label: "내장 (1512×982)", primary: true }];
+
+    expect(buildPinItems(floating)[1]?.submenu).toHaveLength(2); // 자동 + 내장
+
+    // 열거 자체가 불가능한 환경에서만 조용히 빠진다
+    floating.displays = [];
+    const withoutDisplays = buildPinItems(floating);
+    expect(withoutDisplays).toHaveLength(2); // 고정 토글 + separator
+    expect(withoutDisplays.some((i) => i.submenu != null)).toBe(false);
+  });
+
+  it("[M12] 모니터가 둘 이상이면 라디오 서브메뉴로 고를 수 있고 선택이 controller에 전달된다", () => {
+    const floating = new FakeFloatingController();
+    floating.displays = [
+      { id: "1", label: "내장 (1512×982)", primary: true },
+      { id: "2", label: "LG HDR 4K (3840×2160)", primary: false },
+    ];
+
+    const submenu = buildPinItems(floating)[1]?.submenu ?? [];
+
+    // 기본값은 "자동" — 그때그때의 주 모니터를 따라간다
+    expect(submenu[0]?.checked).toBe(true);
+    expect(submenu).toHaveLength(3);
+    expect(submenu[1]?.label).toContain("내장");
+    expect(submenu[1]?.label).toMatch(/primary|주 모니터/i); // primary 표식
+    expect(submenu[2]?.label).toContain("LG HDR 4K");
+    expect(submenu.every((i) => i.type === "radio")).toBe(true);
+
+    submenu[2]?.click?.();
+    expect(floating.displayId).toBe("2");
+
+    // 다시 그리면 고른 모니터에 체크가 옮겨간다
+    const redrawn = buildPinItems(floating)[1]?.submenu ?? [];
+    expect(redrawn[0]?.checked).toBe(false);
+    expect(redrawn[2]?.checked).toBe(true);
+  });
+
+  it("[M13] 모니터를 바꾸면 메뉴바가 즉시 다시 그려진다", async () => {
+    const g = buildGraph(true);
+    await g.timers.init();
+    const tray = new FakeTray();
+    const floating = new FakeFloatingController();
+    floating.displays = [
+      { id: "1", label: "내장", primary: true },
+      { id: "2", label: "외장", primary: false },
+    ];
+    const bar = new TimerMenuBar(g.timers, fakePort(tray), floating);
+    bar.mount();
+
+    tray.items[1]?.submenu?.[2]?.click?.();
+
+    expect(tray.items[1]?.submenu?.[2]?.checked).toBe(true);
+    bar.dispose();
   });
 
   it("[M10] hot reload로 tray를 다시 만들면 이전 전역 인스턴스를 제거한다", () => {

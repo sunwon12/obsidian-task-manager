@@ -183,6 +183,10 @@ const ko = {
   "timer.menu.empty": "진행 중인 타이머 없음",
   "timer.floating.pin": "컴퓨터 화면에 고정",
   "timer.floating.unpin": "화면 고정 해제",
+  "timer.floating.displayMenu": "타이머를 띄울 모니터",
+  "timer.floating.displayAuto": "자동 (주 모니터)",
+  "timer.floating.displayPrimary": "주 모니터",
+  "timer.floating.display": "모니터",
 } as const;
 
 export default ko;

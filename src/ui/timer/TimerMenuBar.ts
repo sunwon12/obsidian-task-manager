@@ -26,7 +26,10 @@ const GLOBAL_TRAY_KEY = "__taskmasterTimerTray";
 // ---------- Port (테스트 주입 지점) ----------
 
 export interface TrayMenuItem {
+  /** separator면 무시된다 — "" 를 넣는다. */
   label: string;
+  type?: "normal" | "separator" | "radio";
+  checked?: boolean;
   enabled?: boolean;
   click?: () => void;
   submenu?: TrayMenuItem[];
@@ -60,18 +63,53 @@ export function menuBarTitle(timers: TaskTimerSnapshot[]): string {
   return `${symbol} ${formatElapsed(primary.elapsedMs)}${extra}`;
 }
 
+/**
+ * 화면 고정 토글 + 어느 모니터에 띄울지 고르는 서브메뉴.
+ *
+ * 모니터가 하나여도 메뉴를 남긴다: "2개 이상일 때만" 숨기면 모니터 열거가 실패했을 때
+ * 사용자에게 아무 신호도 안 남아 기능이 없는 것과 구분되지 않는다.
+ * 열거 자체가 불가능한 환경(구버전 remote)에서만 조용히 빠진다.
+ */
+export function buildPinItems(floatingWindow?: TimerFloatingController): TrayMenuItem[] {
+  if (!floatingWindow?.isSupported()) return [];
+  const items: TrayMenuItem[] = [{
+    label: floatingWindow.isOpen() ? t("timer.floating.unpin") : t("timer.floating.pin"),
+    click: () => floatingWindow.toggle(),
+  }];
+  const displays = floatingWindow.listDisplays();
+  if (displays.length > 0) {
+    const selected = floatingWindow.getDisplayId();
+    items.push({
+      label: t("timer.floating.displayMenu"),
+      submenu: [
+        {
+          label: t("timer.floating.displayAuto"),
+          type: "radio",
+          checked: selected == null,
+          click: () => floatingWindow.setDisplay(null),
+        },
+        ...displays.map((display): TrayMenuItem => ({
+          label: display.primary
+            ? `${display.label} — ${t("timer.floating.displayPrimary")}`
+            : display.label,
+          type: "radio",
+          checked: selected === display.id,
+          click: () => floatingWindow.setDisplay(display.id),
+        })),
+      ],
+    });
+  }
+  items.push({ label: "", type: "separator" });
+  return items;
+}
+
 /** dismissed 배너도 메뉴바에는 계속 나온다 — 되살리기(restore) 입구를 겸한다. */
 function buildMenuItems(
   service: TaskTimerService,
   timers: TaskTimerSnapshot[],
   floatingWindow?: TimerFloatingController,
 ): TrayMenuItem[] {
-  const pinItems: TrayMenuItem[] = floatingWindow?.isSupported()
-    ? [{
-        label: floatingWindow.isOpen() ? t("timer.floating.unpin") : t("timer.floating.pin"),
-        click: () => floatingWindow.toggle(),
-      }]
-    : [];
+  const pinItems = buildPinItems(floatingWindow);
   if (timers.length === 0) {
     return [...pinItems, { label: t("timer.menu.empty"), enabled: false }];
   }
@@ -237,12 +275,16 @@ export function createElectronTrayPort(): TrayPort {
 }
 
 function toElectronTemplate(items: TrayMenuItem[]): unknown[] {
-  return items.map((item) => ({
-    label: item.label,
-    enabled: item.enabled ?? true,
-    ...(item.click ? { click: item.click } : {}),
-    ...(item.submenu ? { submenu: toElectronTemplate(item.submenu) } : {}),
-  }));
+  return items.map((item) => item.type === "separator"
+    ? { type: "separator" }
+    : {
+        label: item.label,
+        enabled: item.enabled ?? true,
+        ...(item.type ? { type: item.type } : {}),
+        ...(item.checked == null ? {} : { checked: item.checked }),
+        ...(item.click ? { click: item.click } : {}),
+        ...(item.submenu ? { submenu: toElectronTemplate(item.submenu) } : {}),
+      });
 }
 
 /** 메뉴바용 template 이미지(라이트/다크 자동 반전). 그리기 실패 시 빈 이미지 → 텍스트만 표시. */

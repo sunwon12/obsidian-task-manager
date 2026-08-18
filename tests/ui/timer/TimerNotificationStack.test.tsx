@@ -77,6 +77,10 @@ class FakeFloatingController implements TimerFloatingController {
 
   isSupported(): boolean { return true; }
   isOpen(): boolean { return this.open; }
+  // 모니터 선택은 메뉴바 전용 — 배너 토글은 관여하지 않는다.
+  listDisplays(): [] { return []; }
+  getDisplayId(): null { return null; }
+  setDisplay(): void {}
   toggle(): boolean {
     this.open = !this.open;
     for (const listener of this.listeners) listener();

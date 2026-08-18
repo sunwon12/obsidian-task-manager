@@ -185,6 +185,10 @@ const en: Record<keyof typeof ko, string> = {
   "timer.menu.empty": "No active timers",
   "timer.floating.pin": "Pin to desktop",
   "timer.floating.unpin": "Unpin from desktop",
+  "timer.floating.displayMenu": "Show timer on",
+  "timer.floating.displayAuto": "Automatic (primary display)",
+  "timer.floating.displayPrimary": "primary",
+  "timer.floating.display": "Display",
 };
 
 export default en;

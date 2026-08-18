@@ -17,15 +17,29 @@ const FLOATING_WIDTH = 380;
 const FLOATING_MARGIN = 16;
 const ACTION_LOG_PREFIX = "__TASKMASTER_TIMER_ACTION__";
 const FLOATING_TITLE = "TaskMaster Timer";
+/** 모니터 선택은 vault가 아니라 이 기기의 설정이다 — 기기별 localStorage에 남긴다. */
+const DISPLAY_STORAGE_KEY = "taskmaster.timer.floatingDisplayId";
 
 export interface FloatingWindowHandle {
   setContent(html: string, height: number): void;
   close(): void;
 }
 
+/** 창을 띄울 수 있는 모니터 하나. id는 Electron display id의 문자열 표현. */
+export interface FloatingDisplay {
+  id: string;
+  label: string;
+  primary: boolean;
+}
+
 export interface FloatingWindowPort {
   isSupported(): boolean;
-  create(onAction: (action: FloatingWindowAction) => void): FloatingWindowHandle | null;
+  create(
+    onAction: (action: FloatingWindowAction) => void,
+    displayId?: string | null,
+  ): FloatingWindowHandle | null;
+  /** 미구현이면 모니터 선택 UI가 뜨지 않는다 (단일 화면과 동일하게 동작). */
+  listDisplays?(): FloatingDisplay[];
   closeExisting?(): void;
 }
 
@@ -39,6 +53,11 @@ export interface TimerFloatingController {
   isSupported(): boolean;
   isOpen(): boolean;
   toggle(): boolean;
+  /** 연결된 모니터 목록. 비면(열거 불가) 선택 UI가 숨는다. */
+  listDisplays(): FloatingDisplay[];
+  /** 선택된 모니터 id. null이면 "자동" — 그때그때의 주 모니터를 따라간다. */
+  getDisplayId(): string | null;
+  setDisplay(displayId: string | null): void;
   subscribe(listener: () => void): () => void;
 }
 
@@ -52,6 +71,7 @@ export class TimerFloatingWindow implements TimerFloatingController {
   private unsubscribeService: (() => void) | null = null;
   private intervalId: number | null = null;
   private readonly listeners = new Set<() => void>();
+  private displayId: string | null = loadPreferredDisplayId();
 
   constructor(
     private readonly service: TaskTimerService,
@@ -67,6 +87,27 @@ export class TimerFloatingWindow implements TimerFloatingController {
     return this.handle != null;
   }
 
+  listDisplays(): FloatingDisplay[] {
+    return this.port.listDisplays?.() ?? [];
+  }
+
+  getDisplayId(): string | null {
+    return this.displayId;
+  }
+
+  /** 선택을 저장하고, 창이 떠 있으면 그 모니터로 곧바로 옮겨 다시 띄운다. */
+  setDisplay(displayId: string | null): void {
+    if (this.displayId === displayId) return;
+    this.displayId = displayId;
+    savePreferredDisplayId(displayId);
+    if (!this.handle) {
+      this.emit();
+      return;
+    }
+    this.close();
+    this.open();
+  }
+
   toggle(): boolean {
     if (this.handle) {
       this.close();
@@ -77,7 +118,7 @@ export class TimerFloatingWindow implements TimerFloatingController {
 
   open(): boolean {
     if (this.handle) return true;
-    const handle = this.port.create((action) => this.handleAction(action));
+    const handle = this.port.create((action) => this.handleAction(action), this.displayId);
     if (!handle) return false;
     this.handle = handle;
     this.unsubscribeService = this.service.subscribe(() => this.update());
@@ -228,6 +269,26 @@ export function parseFloatingConsoleAction(message: string): FloatingWindowActio
     : null;
 }
 
+// ---------- 모니터 선택 저장 ----------
+
+/** localStorage가 막힌 환경(모바일, 시크릿 모드)에서도 죽지 않고 "자동"으로 떨어진다. */
+function loadPreferredDisplayId(): string | null {
+  try {
+    return window.localStorage?.getItem(DISPLAY_STORAGE_KEY) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function savePreferredDisplayId(displayId: string | null): void {
+  try {
+    if (displayId == null) window.localStorage?.removeItem(DISPLAY_STORAGE_KEY);
+    else window.localStorage?.setItem(DISPLAY_STORAGE_KEY, displayId);
+  } catch {
+    // 저장에 실패해도 이번 세션 선택은 메모리에 그대로 남는다.
+  }
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -265,13 +326,29 @@ interface BrowserWindowLike {
   isAlwaysOnTop?(): boolean;
 }
 
+interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface ElectronDisplayLike {
+  id: number;
+  /** Electron 16+ 에서만 채워진다. 비면 "모니터 N"으로 대체한다. */
+  label?: string;
+  bounds?: Rect;
+  workArea: Rect;
+}
+
 interface ElectronRemoteLike {
   BrowserWindow: {
     new (options: Record<string, unknown>): BrowserWindowLike;
     getAllWindows?(): BrowserWindowLike[];
   };
   screen: {
-    getPrimaryDisplay(): { workArea: { x: number; y: number; width: number; height: number } };
+    getPrimaryDisplay(): ElectronDisplayLike;
+    getAllDisplays?(): ElectronDisplayLike[];
   };
 }
 
@@ -301,15 +378,22 @@ export function createElectronFloatingWindowPort(): FloatingWindowPort {
   if (initialRemote) closeExistingFloatingWindows(initialRemote);
   return {
     isSupported: () => resolveElectronRemote() != null,
+    listDisplays(): FloatingDisplay[] {
+      const remote = resolveElectronRemote();
+      return remote ? listElectronDisplays(remote) : [];
+    },
     closeExisting(): void {
       const remote = resolveElectronRemote();
       if (remote) closeExistingFloatingWindows(remote);
     },
-    create(onAction: (action: FloatingWindowAction) => void): FloatingWindowHandle | null {
+    create(
+      onAction: (action: FloatingWindowAction) => void,
+      displayId?: string | null,
+    ): FloatingWindowHandle | null {
       const remote = resolveElectronRemote();
       if (!remote) return null;
       closeExistingFloatingWindows(remote);
-      const area = remote.screen.getPrimaryDisplay().workArea;
+      const area = resolveWorkArea(remote, displayId ?? null);
       let browser: BrowserWindowLike;
       try {
         browser = new remote.BrowserWindow({
@@ -397,6 +481,62 @@ export function createElectronFloatingWindowPort(): FloatingWindowPort {
       };
     },
   };
+}
+
+let displaysLogged = false;
+
+/**
+ * 모니터 목록.
+ *
+ * getAllDisplays가 없거나 빈 배열을 주는 remote에서도 창을 띄우는 데 쓰는
+ * getPrimaryDisplay는 항상 동작하므로, 최소한 그 하나로 목록을 채운다.
+ * "모니터가 안 뜬다"가 곧 "코드가 안 돈다"를 뜻하게 만드는 목적도 겸한다.
+ */
+function listElectronDisplays(remote: ElectronRemoteLike): FloatingDisplay[] {
+  let displays: ElectronDisplayLike[];
+  let primaryId: number | null;
+  try {
+    const primary = remote.screen.getPrimaryDisplay();
+    primaryId = primary.id;
+    const all = remote.screen.getAllDisplays?.() ?? [];
+    displays = all.length > 0 ? all : [primary];
+  } catch (err) {
+    console.error("[TaskMaster] display enumeration failed", err);
+    return [];
+  }
+  const resolved = displays.map((display, index) => ({
+    id: String(display.id),
+    label: displayLabel(display, index),
+    primary: display.id === primaryId,
+  }));
+  // 메뉴에 모니터가 안 보인다는 신고를 콘솔 한 줄로 판정하기 위한 흔적. 세션당 1회.
+  if (!displaysLogged) {
+    displaysLogged = true;
+    console.info("[TaskMaster] displays", resolved);
+  }
+  return resolved;
+}
+
+function displayLabel(display: ElectronDisplayLike, index: number): string {
+  const name = display.label?.trim() || `${t("timer.floating.display")} ${index + 1}`;
+  const bounds = display.bounds;
+  return bounds
+    ? `${name} (${Math.round(bounds.width)}×${Math.round(bounds.height)})`
+    : name;
+}
+
+/** 고른 모니터를 뽑아 놓은 뒤 뽑혔거나(연결 해제) id가 없으면 주 모니터로 떨어진다. */
+function resolveWorkArea(remote: ElectronRemoteLike, displayId: string | null): Rect {
+  if (displayId != null) {
+    try {
+      const match = (remote.screen.getAllDisplays?.() ?? [])
+        .find((display) => String(display.id) === displayId);
+      if (match?.workArea) return match.workArea;
+    } catch (err) {
+      console.error("[TaskMaster] display lookup failed", err);
+    }
+  }
+  return remote.screen.getPrimaryDisplay().workArea;
 }
 
 function closeExistingFloatingWindows(remote: ElectronRemoteLike): void {
