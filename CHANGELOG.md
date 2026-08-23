@@ -5,6 +5,17 @@ All notable changes to TaskMaster Obsidian plugin will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] - 2026-08-23
+
+### Added
+
+- **Clicking a card title in the quick panel opens that card's note in Obsidian** — both the focused
+  cards and the next-up list. The panel closes on the way out, since the note takes over the screen.
+- The titles are not styled as links; they underline on hover only. The panel is something you read,
+  and a column of blue links reads as noise.
+- Inner links are marked `draggable="false"` so grabbing a title still starts the card drag between
+  현재 작업 and 다음 할 일 instead of the browser's own link drag.
+
 ## [0.14.0] - 2026-08-23
 
 ### Added

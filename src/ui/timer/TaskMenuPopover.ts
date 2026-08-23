@@ -76,6 +76,7 @@ export type TaskMenuPopoverAction =
   | { kind: "add-step"; taskId: TaskId; value: string }
   | { kind: "draft-card"; taskId: TaskId }
   | { kind: "draft-all" }
+  | { kind: "open-task"; taskId: TaskId }
   | { kind: "park-task"; taskId: TaskId }
   | { kind: "start-task"; taskId: TaskId }
   | { kind: "create-task"; value: string };
@@ -119,6 +120,7 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
     private readonly reports: AiReportController | null = null,
     private readonly openReport: () => void = () => {},
     private readonly drafts: AiDraftController | null = null,
+    private readonly openTask: (taskId: TaskId) => void = () => {},
   ) {}
 
   isSupported(): boolean {
@@ -375,6 +377,14 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
             steps,
             currentStep: task.currentStep ?? 1,
           });
+          return;
+        }
+        case "open-task": {
+          const task = this.store.getState().tasks.get(action.taskId);
+          if (!task) return;
+          this.openTask(action.taskId);
+          // 노트는 Obsidian 창에서 열리므로 패널은 비켜 준다.
+          this.close();
           return;
         }
         case "draft-card":
@@ -658,7 +668,7 @@ function renderFocusCard(
       <span class="timer-value">${formatElapsed(timer.elapsedMs)}</span>
     </div>
     <div class="focus-title-row">
-      <h3 class="scroll-title" data-scroll-key="focus:${escapeHtml(timer.taskId)}" title="${escapeHtml(timer.title)}">${escapeHtml(timer.title)}</h3>
+      <h3><a class="task-open scroll-title" draggable="false" data-scroll-key="focus:${escapeHtml(timer.taskId)}" href="${actionUrl("open-task", timer.taskId)}" title="${escapeHtml(timer.title)}" aria-label="${escapeHtml(t("timer.popover.openNote"))}">${escapeHtml(timer.title)}</a></h3>
       <nav class="focus-controls">
         <a href="${actionUrl(primaryAction, timer.taskId)}" title="${escapeHtml(timer.phase === "running" ? t("timer.pause") : t("timer.start"))}">${primaryGlyph}</a>
         <a class="stop" href="${actionUrl("stop", timer.taskId)}" title="${escapeHtml(t("timer.stop"))}">■</a>
@@ -751,7 +761,7 @@ function renderNextTask(task: Task): string {
   const due = task.due ? `<span class="task-due">${escapeHtml(task.due.slice(5))}</span>` : "";
   return `<div class="task-row" draggable="true" data-drag="next" data-task-id="${escapeHtml(task.id)}">
     <span class="task-status">${escapeHtml(status)}</span>
-    <span class="task-title scroll-title" data-scroll-key="task:${escapeHtml(task.id)}" title="${escapeHtml(task.title)}">${escapeHtml(task.title)}</span>
+    <a class="task-title scroll-title task-open" draggable="false" data-scroll-key="task:${escapeHtml(task.id)}" href="${actionUrl("open-task", task.id)}" title="${escapeHtml(task.title)}" aria-label="${escapeHtml(t("timer.popover.openNote"))}">${escapeHtml(task.title)}</a>
     ${due}
     <a class="start-task" href="${actionUrl("start-task", task.id)}" title="${escapeHtml(t("timer.popover.startTask"))}">▶</a>
   </div>`;
@@ -806,8 +816,8 @@ export function parseTaskMenuPopoverAction(url: string): TaskMenuPopoverAction |
     }
     const taskId = parsed.searchParams.get("taskId") as TaskId | null;
     if (!taskId) return null;
-    if (["start", "pause", "stop", "start-task", "draft-card", "park-task"].includes(kind)) {
-      return { kind: kind as "start" | "pause" | "stop" | "start-task" | "draft-card" | "park-task", taskId };
+    if (["start", "pause", "stop", "start-task", "draft-card", "park-task", "open-task"].includes(kind)) {
+      return { kind: kind as "start" | "pause" | "stop" | "start-task" | "draft-card" | "park-task" | "open-task", taskId };
     }
     if (kind === "select-step") {
       const step = Number(parsed.searchParams.get("step"));
@@ -1293,6 +1303,11 @@ export const POPOVER_DOCUMENT = `<!doctype html>
   .section-heading { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; }
   .section-heading h2 { flex: 1; color: #d8dbe1; font-size: 12px; font-weight: 700; letter-spacing: .01em; }
   .section-heading span { color: #7f8590; font-size: 11px; font-variant-numeric: tabular-nums; }
+  /* 제목을 누르면 그 카드의 노트가 Obsidian에서 열린다. 링크처럼 안 보이게 두되
+     hover에서만 밑줄로 알린다 — 패널은 읽는 화면이라 파란 링크가 시끄럽다. */
+  .task-open { color: inherit; text-decoration: none; }
+  .task-open:hover { text-decoration: underline; text-underline-offset: 2px; }
+
   /* 드래그로 현재 작업 ↔ 다음 할 일 이동. 끌 수 있다는 신호를 커서로 준다. */
   [data-drag] { cursor: grab; }
   [data-drag]:active { cursor: grabbing; }

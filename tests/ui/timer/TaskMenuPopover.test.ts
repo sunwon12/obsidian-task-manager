@@ -146,7 +146,7 @@ describe("TaskMenuPopover — 메뉴바 빠른 작업 패널", () => {
     expect(content.html).toContain(`data-scroll-key="focus:${focus.id}"`);
     expect(content.html).toContain(`data-scroll-key="step:${focus.id}:1"`);
     expect(content.html).toContain(`data-scroll-key="task:${next.id}"`);
-    expect(content.html).toContain('class="task-title scroll-title"');
+    expect(content.html).toContain('class="task-title scroll-title task-open"');
   });
 
   it("메뉴바 재클릭·닫기는 이전 앱으로 포커스를 돌려주고, 보드 열기는 그대로 둔다", async () => {
@@ -872,5 +872,81 @@ describe("TaskMenuPopover — 현재 작업 ↔ 다음 할 일 드래그", () =>
     // 빠지면 타이머가 도는 동안 드래그가 매 초 끊기고, 그 실패는 테스트로만 잡힌다.
     expect(POPOVER_DOCUMENT).toContain("if (dragging) { pendingHtml = html; return; }");
     expect(POPOVER_DOCUMENT).toContain('var kind = to === "focus" ? "start-task" : "park-task";');
+  });
+});
+
+describe("TaskMenuPopover — 카드에서 노트 열기", () => {
+  it("현재 작업과 다음 할 일의 제목이 노트를 여는 링크다", async () => {
+    const graph = buildGraph();
+    await graph.timers.init();
+    const focus = await graph.taskService.createTask({ title: "집중 중", status: "doing" });
+    const next = await graph.taskService.createTask({ title: "다음 작업", status: "todo" });
+
+    const content = renderTaskMenuPopover(
+      graph.timers.getTimers(),
+      [...graph.store.getState().tasks.values()],
+      new Date("2026-08-22T12:00:00+09:00"),
+    );
+
+    expect(content.html).toContain(`taskmaster-menu://open-task?taskId=${focus.id}`);
+    expect(content.html).toContain(`taskmaster-menu://open-task?taskId=${next.id}`);
+    // 링크가 드래그를 가로채면 카드 이동이 깨진다.
+    expect(content.html).toContain('draggable="false"');
+  });
+
+  it("open-task는 그 카드로 열고 패널을 비켜 준다", async () => {
+    const graph = buildGraph();
+    await graph.timers.init();
+    const task = await graph.taskService.createTask({ title: "집중 중", status: "doing" });
+    const opened: string[] = [];
+    const handle = new FakePopoverHandle();
+    let dispatch!: (action: TaskMenuPopoverAction) => void;
+    const port: TaskMenuPopoverPort = {
+      isSupported: () => true,
+      create: (_anchor, onAction) => { dispatch = onAction; return handle; },
+      defaultAnchor: () => ({ x: 0, y: 0, width: 24, height: 24 }),
+    };
+    const popover = new TaskMenuPopover(
+      graph.timers, graph.taskService, graph.store, port,
+      vi.fn(), () => new Date("2026-08-22T12:00:00+09:00"),
+      undefined, null, () => {}, null,
+      (taskId) => opened.push(taskId),
+    );
+    expect(popover.openDefault()).toBe(true);
+
+    dispatch({ kind: "open-task", taskId: task.id });
+    await vi.waitFor(() => expect(opened).toEqual([task.id]));
+    expect(handle.closed).toBe(true);
+  });
+
+  it("없는 카드면 아무것도 열지 않는다", async () => {
+    const graph = buildGraph();
+    await graph.timers.init();
+    const opened: string[] = [];
+    const handle = new FakePopoverHandle();
+    let dispatch!: (action: TaskMenuPopoverAction) => void;
+    const port: TaskMenuPopoverPort = {
+      isSupported: () => true,
+      create: (_anchor, onAction) => { dispatch = onAction; return handle; },
+      defaultAnchor: () => ({ x: 0, y: 0, width: 24, height: 24 }),
+    };
+    const popover = new TaskMenuPopover(
+      graph.timers, graph.taskService, graph.store, port,
+      vi.fn(), () => new Date("2026-08-22T12:00:00+09:00"),
+      undefined, null, () => {}, null,
+      (taskId) => opened.push(taskId),
+    );
+    expect(popover.openDefault()).toBe(true);
+
+    dispatch({ kind: "open-task", taskId: "task_missing" as never });
+    await Promise.resolve();
+    expect(opened).toEqual([]);
+    expect(handle.closed).toBe(false);
+  });
+
+  it("open-task 액션 URL을 파싱한다", () => {
+    expect(parseTaskMenuPopoverAction("taskmaster-menu://open-task?taskId=task_x"))
+      .toEqual({ kind: "open-task", taskId: "task_x" });
+    expect(parseTaskMenuPopoverAction("taskmaster-menu://open-task")).toBeNull();
   });
 });

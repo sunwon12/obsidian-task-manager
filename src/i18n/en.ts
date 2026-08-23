@@ -261,6 +261,7 @@ const en: Record<keyof typeof ko, string> = {
   "timer.popover.review": "REVIEW",
   "timer.popover.hold": "HOLD",
   "timer.popover.backlog": "BACKLOG",
+  "timer.popover.openNote": "Open this card's note",
   "timer.popover.draftAll": "Fill all",
   "timer.popover.draftBatch": "{done}/{total}",
   "timer.popover.draftCard": "Fill with AI",

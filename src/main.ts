@@ -6,7 +6,7 @@
 // - View 등록 + ribbon icon + command palette
 // - onunload sync flush (ADR-0004)
 
-import { Notice, Plugin } from "obsidian";
+import { Notice, Plugin, TFile } from "obsidian";
 import { TaskMasterView, VIEW_TYPE_TASKMASTER } from "./view/TaskMasterView";
 import { mountTimerMenuBar } from "./ui/timer/TimerMenuBar";
 import {
@@ -36,7 +36,7 @@ import { createNodeAiReportRunner } from "./integration/aiReportRunner";
 import { AiDraftService } from "./services/AiDraftService";
 import { createNodeAiDraftRunner } from "./integration/aiDraftRunner";
 import { createTaskMasterStore, type TaskMasterStore } from "./store/taskMasterStore";
-import type { PluginSettings } from "./core/types";
+import type { PluginSettings, TaskId } from "./core/types";
 
 /**
  * View와 React Provider가 사용하는 의존성 컨테이너.
@@ -269,6 +269,7 @@ export default class TaskMasterPlugin extends Plugin {
             aiReportService,
             () => void this.openAiReportFile(settings.aiReportPath),
             aiDraftService,
+            (taskId) => void this.openTaskNote(taskId),
           );
           // 기본 타이머 UI는 macOS 메뉴바 패널 하나로 제한한다.
           // Obsidian 창 위 자동 배너은 내용을 가리고 메뉴바와 역할이 겹쳐 마운트하지 않는다.
@@ -361,6 +362,19 @@ export default class TaskMasterPlugin extends Plugin {
   }
 
   /** 패널의 "전체 리포트 열기" — 스킬이 쓴 Markdown을 Obsidian에서 연다. */
+  /** 메뉴바 패널에서 카드를 고르면 그 카드의 Markdown 노트를 새 탭에서 연다. */
+  private async openTaskNote(taskId: TaskId): Promise<void> {
+    const task = this.container?.store.getState().tasks.get(taskId);
+    if (!task) return;
+    try {
+      const file = this.app.vault.getAbstractFileByPath(task.path);
+      if (!(file instanceof TFile)) return;
+      await this.app.workspace.getLeaf("tab").openFile(file);
+    } catch (err) {
+      console.error("[TaskMaster] open task note failed", err);
+    }
+  }
+
   private async openAiReportFile(path: string): Promise<void> {
     const target = path.trim();
     if (!target) return;

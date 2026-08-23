@@ -259,6 +259,7 @@ const ko = {
   "timer.popover.review": "리뷰",
   "timer.popover.hold": "보류",
   "timer.popover.backlog": "후보",
+  "timer.popover.openNote": "이 카드의 노트 열기",
   "timer.popover.draftAll": "모두 채우기",
   "timer.popover.draftBatch": "{done}/{total}",
   "timer.popover.draftCard": "AI로 채우기",
