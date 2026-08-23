@@ -8,6 +8,7 @@ import { t } from "../../i18n";
 import type { AiDraftController } from "../../services/AiDraftService";
 import { debugLog } from "./debugLog";
 import type { Task, TaskId, UpdateTaskInput } from "../../core/types";
+import { readMemoEntries, type MemoEntry } from "../../core/taskMemo";
 import type { TaskMasterStore } from "../../store/taskMasterStore";
 import type { TaskService } from "../../services/TaskService";
 import type { AiReport, AiReportBullet } from "../../core/aiReport";
@@ -112,6 +113,8 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
   private draftBatch: { done: number; total: number } | null = null;
   /** 메모 입력창이 열린 카드. 한 번에 하나만 연다. */
   private memoTaskId: TaskId | null = null;
+  /** 열린 카드의 지난 메모. 본문은 store에 없어 열 때 한 번 읽는다. */
+  private memoEntries: MemoEntry[] = [];
 
   constructor(
     private readonly timers: TaskTimerService,
@@ -242,6 +245,7 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
       this.reportPanelState(now),
       this.draftPanelState(now),
       this.memoTaskId,
+      this.memoEntries,
     );
     this.handle.setContent(content.html, content.height);
   }
@@ -340,6 +344,19 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
     await this.tasks.updateTask(task.id, input);
   }
 
+  /** 본문은 store에 없다(bodySummary만 있다). 메모창을 열 때와 저장 뒤에만 읽는다. */
+  private async loadMemoEntries(taskId: TaskId): Promise<void> {
+    try {
+      const body = await this.tasks.readBody(taskId);
+      if (this.memoTaskId !== taskId) return;
+      this.memoEntries = readMemoEntries(body);
+    } catch (err) {
+      debugLog(`memo read failed: ${String(err)}`);
+      this.memoEntries = [];
+    }
+    this.update();
+  }
+
   private async handleAction(action: TaskMenuPopoverAction): Promise<void> {
     try {
       switch (action.kind) {
@@ -393,13 +410,21 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
           return;
         }
         case "toggle-memo":
-          this.memoTaskId = this.memoTaskId === action.taskId ? null : action.taskId;
+          if (this.memoTaskId === action.taskId) {
+            this.memoTaskId = null;
+            this.memoEntries = [];
+            this.update();
+            return;
+          }
+          this.memoTaskId = action.taskId;
+          this.memoEntries = [];
           this.update();
+          await this.loadMemoEntries(action.taskId);
           return;
         case "save-memo": {
           await this.tasks.appendMemo(action.taskId, action.value, this.now());
-          this.memoTaskId = null;
-          this.update();
+          // 닫지 않는다 — 방금 쓴 것이 목록에 붙는 걸 보고 이어서 적을 수 있어야 한다.
+          await this.loadMemoEntries(action.taskId);
           return;
         }
         case "draft-card":
@@ -491,6 +516,7 @@ export function renderTaskMenuPopover(
   report: AiReportPanelState | null = null,
   draft: AiDraftPanelState | null = null,
   memoTaskId: TaskId | null = null,
+  memoEntries: readonly MemoEntry[] = [],
 ): TaskMenuPopoverContent {
   const activeTaskIds = new Set(timers.map((timer) => timer.taskId));
   const nextTasks = tasks
@@ -512,6 +538,7 @@ export function renderTaskMenuPopover(
         taskById.get(timer.taskId) ?? null,
         draft,
         memoTaskId === timer.taskId,
+        memoEntries,
       )).join("")
     : `<div class="empty-state">
         <span class="empty-mark">✓</span>
@@ -672,6 +699,7 @@ function renderFocusCard(
   task: Task | null,
   draft: AiDraftPanelState | null,
   memoOpen: boolean,
+  memoEntries: readonly MemoEntry[],
 ): string {
   const phaseClass = timer.phase === "running" ? "running" : timer.phase === "paused" ? "paused" : "idle";
   const phaseLabel = timer.phase === "running"
@@ -706,7 +734,7 @@ function renderFocusCard(
         : ""}
       <a class="memo-toggle${memoOpen ? " open" : ""}" href="${actionUrl("toggle-memo", timer.taskId)}">✎ ${escapeHtml(t("timer.popover.memo"))}</a>
     </div>
-    ${memoOpen ? renderMemoForm(timer.taskId) : ""}
+    ${memoOpen ? renderMemoForm(timer.taskId, memoEntries) : ""}
   </article>`;
 }
 
@@ -729,9 +757,18 @@ function renderStep(timer: TaskTimerSnapshot, value: string, index: number): str
   </li>`;
 }
 
-/** 카드 본문에 바로 쓰는 메모 입력. 패널 안에서 열고 닫는다. */
-function renderMemoForm(taskId: TaskId): string {
-  return `<form class="quick-form memo-form" data-action="taskmaster-menu://save-memo">
+/**
+ * 카드 본문에 바로 쓰는 메모 입력. 지난 메모를 같이 띄운다 — 앞에 뭘 적었는지
+ * 보면서 이어 쓰는 게 이 기능의 요점이라, 목록 없이 입력창만 두면 반쪽이다.
+ */
+function renderMemoForm(taskId: TaskId, entries: readonly MemoEntry[]): string {
+  const history = entries.length > 0
+    // 최신이 위 — 방금 적은 것이 스크롤 없이 바로 보여야 한다.
+    ? `<ul class="memo-history">${[...entries].reverse().slice(0, 30).map((entry) =>
+        `<li><span class="memo-when">${escapeHtml(`${entry.date.slice(5)} ${entry.time}`)}</span><span class="memo-text">${escapeHtml(entry.text)}</span></li>`,
+      ).join("")}</ul>`
+    : `<p class="memo-empty">${escapeHtml(t("timer.popover.memoEmpty"))}</p>`;
+  return `${history}<form class="quick-form memo-form" data-action="taskmaster-menu://save-memo">
     <input type="hidden" name="taskId" value="${escapeHtml(taskId)}">
     <textarea data-preserve="memo:${escapeHtml(taskId)}" name="value" rows="4" maxlength="2000" autofocus placeholder="${escapeHtml(t("timer.popover.memoPlaceholder"))}" aria-label="${escapeHtml(t("timer.popover.memoPlaceholder"))}"></textarea>
     <button type="submit">${escapeHtml(t("timer.popover.memoSave"))}</button>
@@ -1350,10 +1387,16 @@ export const POPOVER_DOCUMENT = `<!doctype html>
   .memo-toggle { padding: 2px 6px; border-radius: 6px; color: #9aa1ad; background: rgba(255,255,255,.06); font-size: 9.5px; font-weight: 650; }
   .memo-toggle:hover { color: #eaf2ff; background: rgba(117,180,255,.18); }
   .memo-toggle.open { color: #10151b; background: #74b5fa; }
+  .memo-history { margin: 8px 0 0; padding: 6px 8px; max-height: 132px; overflow-y: auto; list-style: none; border-radius: 9px; background: rgba(255,255,255,.04); }
+  .memo-history li { display: flex; gap: 7px; padding: 3px 0; font-size: 10.5px; line-height: 1.45; }
+  .memo-history li + li { border-top: 1px solid rgba(255,255,255,.06); }
+  .memo-when { flex: none; color: #7f8794; font-variant-numeric: tabular-nums; }
+  .memo-text { min-width: 0; color: #d5dde6; white-space: pre-wrap; word-break: break-word; }
+  .memo-empty { margin: 8px 0 0; font-size: 10.5px; color: #7f8794; }
   .memo-form { display: flex; align-items: flex-end; gap: 6px; margin-top: 8px; }
   .memo-form textarea { flex: 1; min-width: 0; resize: none; padding: 7px 9px; border: 1px solid rgba(255,255,255,.12); border-radius: 9px; background: rgba(255,255,255,.05); color: #eaf2ff; font: inherit; font-size: 11px; line-height: 1.45; }
   .memo-form textarea:focus { outline: none; border-color: rgba(117,180,255,.6); }
-  .memo-form button { flex: none; padding: 6px 10px; border: 0; border-radius: 9px; background: #74b5fa; color: #10151b; font-size: 10.5px; font-weight: 700; }
+  .memo-form button { flex: none; white-space: nowrap; padding: 6px 10px; border: 0; border-radius: 9px; background: #74b5fa; color: #10151b; font-size: 10.5px; font-weight: 700; }
 
   /* 제목을 누르면 그 카드의 노트가 Obsidian에서 열린다. 링크처럼 안 보이게 두되
      hover에서만 밑줄로 알린다 — 패널은 읽는 화면이라 파란 링크가 시끄럽다. */

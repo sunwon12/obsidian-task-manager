@@ -1001,7 +1001,46 @@ describe("TaskMenuPopover — 카드 메모", () => {
     expect(content.html).toContain("taskmaster-menu://save-memo");
   });
 
-  it("메모를 저장하면 본문에 시간과 함께 쌓이고 입력창은 닫힌다", async () => {
+  it("열면 지난 메모를 최신순으로 같이 보여준다", async () => {
+    const graph = buildGraph();
+    await graph.timers.init();
+    const task = await graph.taskService.createTask({
+      title: "집중 중",
+      status: "doing",
+      body: "# 집중 중\n\n## 메모\n\n### 2026-08-22\n- 09:00 어제 적은 것\n- 11:30 그 다음\n",
+    });
+
+    const content = renderTaskMenuPopover(
+      graph.timers.getTimers(),
+      [...graph.store.getState().tasks.values()],
+      new Date("2026-08-23T18:42:00+09:00"),
+      null, null, task.id,
+      [
+        { date: "2026-08-22", time: "09:00", text: "어제 적은 것" },
+        { date: "2026-08-22", time: "11:30", text: "그 다음" },
+      ],
+    );
+
+    expect(content.html).toContain("어제 적은 것");
+    expect(content.html).toContain("08-22 11:30");
+    // 최신이 위 — 방금 쓴 것을 스크롤 없이 본다.
+    expect(content.html.indexOf("그 다음")).toBeLessThan(content.html.indexOf("어제 적은 것"));
+  });
+
+  it("메모가 없으면 빈 상태를 알린다", async () => {
+    const graph = buildGraph();
+    await graph.timers.init();
+    const task = await graph.taskService.createTask({ title: "집중 중", status: "doing" });
+    const content = renderTaskMenuPopover(
+      graph.timers.getTimers(),
+      [...graph.store.getState().tasks.values()],
+      new Date("2026-08-23T18:42:00+09:00"),
+      null, null, task.id, [],
+    );
+    expect(content.html).toContain("아직 적어 둔 메모가 없습니다");
+  });
+
+  it("메모를 저장하면 본문에 쌓이고 입력창은 열린 채로 목록이 갱신된다", async () => {
     const graph = buildGraph();
     await graph.timers.init();
     const task = await graph.taskService.createTask({
@@ -1009,7 +1048,7 @@ describe("TaskMenuPopover — 카드 메모", () => {
       status: "doing",
       body: "# 집중 중\n\n원래 설명.\n",
     });
-    const { popover, dispatch } = buildPopover(graph);
+    const { popover, handle, dispatch } = buildPopover(graph);
     expect(popover.openDefault()).toBe(true);
 
     dispatch({ kind: "toggle-memo", taskId: task.id });
@@ -1022,6 +1061,11 @@ describe("TaskMenuPopover — 카드 메모", () => {
       expect(body).toContain("- 18:42 지현님 답변 대기");
       // 원래 본문은 그대로 남는다.
       expect(body).toContain("원래 설명.");
+    });
+    // 저장했다고 닫지 않는다 — 방금 쓴 것을 보며 이어 적을 수 있어야 한다.
+    await vi.waitFor(() => {
+      expect(handle.html).toContain("18:42");
+      expect(handle.html).toContain("지현님 답변 대기");
     });
   });
 

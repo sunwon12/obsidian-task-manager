@@ -11,6 +11,7 @@
 export const MEMO_HEADING = "## 메모";
 
 const DATE_HEADING = /^###\s+(\d{4}-\d{2}-\d{2})\s*$/;
+const MEMO_BULLET = /^-\s+(\d{2}:\d{2})\s*(.*)$/;
 const SECTION_HEADING = /^##\s+/;
 
 function pad(value: number): string {
@@ -77,4 +78,55 @@ export function appendMemoToBody(body: string, text: string, now: Date): string 
     "",
     ...lines.slice(end),
   ].join("\n").replace(/\n{3,}/gu, "\n\n").replace(/\s+$/u, "") + "\n";
+}
+
+export interface MemoEntry {
+  date: string;
+  time: string;
+  /** 이어지는 들여쓴 줄까지 합친 본문. */
+  text: string;
+}
+
+/**
+ * 본문의 메모 절을 읽어 기록 순서(오래된 것이 먼저)로 돌려준다.
+ * 형식이 어긋난 줄은 조용히 건너뛴다 — 사람이 직접 편집하는 파일이라
+ * 파서가 깨지는 것보다 못 읽는 줄을 흘리는 편이 낫다.
+ */
+export function readMemoEntries(body: string): MemoEntry[] {
+  const lines = body.split(/\r?\n/u);
+  const headingIndex = lines.findIndex((line) => line.trim() === MEMO_HEADING);
+  if (headingIndex < 0) return [];
+
+  const entries: MemoEntry[] = [];
+  let date = "";
+  let current: MemoEntry | null = null;
+
+  for (let index = headingIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (SECTION_HEADING.test(line)) break;
+
+    const dateMatch = DATE_HEADING.exec(line.trim());
+    if (dateMatch) {
+      current = null;
+      date = dateMatch[1] ?? "";
+      continue;
+    }
+
+    const bullet = MEMO_BULLET.exec(line.trim());
+    if (bullet) {
+      current = { date, time: bullet[1] ?? "", text: (bullet[2] ?? "").trim() };
+      entries.push(current);
+      continue;
+    }
+
+    // 들여쓴 줄은 직전 메모의 이어지는 본문이다.
+    if (current && /^\s+\S/u.test(line)) {
+      current.text = `${current.text}\n${line.trim()}`;
+      continue;
+    }
+    if (line.trim() === "") continue;
+    current = null;
+  }
+
+  return entries;
 }

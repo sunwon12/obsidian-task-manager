@@ -5,6 +5,23 @@ All notable changes to TaskMaster Obsidian plugin will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.0] - 2026-08-23
+
+### Added
+
+- **The memo box now shows what you already wrote.** Opening `✎ 메모` reads the card's body and
+  lists its past memos above the input, newest first, in a scrolling box. Writing a status note
+  without seeing the previous one is half the feature — the point is continuing a thread, not
+  filing isolated lines.
+- Saving no longer closes the box. The list refreshes with the line you just wrote so you can keep
+  going.
+
+### Note
+
+The body is not in the store — only `bodySummary` is — so it is read from disk when the box opens
+and again after each save, never on the panel's per-second re-render. A malformed line in the memo
+section is skipped rather than breaking the parse, since that file is edited by hand too.
+
 ## [0.16.0] - 2026-08-23
 
 ### Added

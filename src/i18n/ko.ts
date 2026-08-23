@@ -260,6 +260,7 @@ const ko = {
   "timer.popover.hold": "보류",
   "timer.popover.backlog": "후보",
   "timer.popover.memo": "메모",
+  "timer.popover.memoEmpty": "아직 적어 둔 메모가 없습니다.",
   "timer.popover.memoPlaceholder": "지금 상황을 적어 두세요 (본문에 시간과 함께 쌓입니다)",
   "timer.popover.memoSave": "저장",
   "timer.popover.openNote": "이 카드의 노트 열기",

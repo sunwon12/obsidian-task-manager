@@ -262,6 +262,7 @@ const en: Record<keyof typeof ko, string> = {
   "timer.popover.hold": "HOLD",
   "timer.popover.backlog": "BACKLOG",
   "timer.popover.memo": "Memo",
+  "timer.popover.memoEmpty": "No memos yet.",
   "timer.popover.memoPlaceholder": "Jot down where you are (appended to the note body with a timestamp)",
   "timer.popover.memoSave": "Save",
   "timer.popover.openNote": "Open this card's note",

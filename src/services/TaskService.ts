@@ -282,6 +282,11 @@ export class TaskService {
     this.store.getState().upsertTask(filled);
   }
 
+  /** 카드 본문 원문. 패널이 지난 메모를 보여줄 때 읽는다. */
+  async readBody(taskId: TaskId): Promise<string> {
+    return this.tasks.readBody(taskId);
+  }
+
   /**
    * 카드 본문에 메모 한 건을 덧붙인다. 랏코 패널에서 작업 중간에 상황을 적는 경로다.
    * 본문 전체를 다시 쓰지만 append 결과만 쓰므로 기존 내용은 보존된다.
