@@ -77,6 +77,8 @@ export type TaskMenuPopoverAction =
   | { kind: "draft-card"; taskId: TaskId }
   | { kind: "draft-all" }
   | { kind: "open-task"; taskId: TaskId }
+  | { kind: "toggle-memo"; taskId: TaskId }
+  | { kind: "save-memo"; taskId: TaskId; value: string }
   | { kind: "park-task"; taskId: TaskId }
   | { kind: "start-task"; taskId: TaskId }
   | { kind: "create-task"; value: string };
@@ -108,6 +110,8 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
   private reportCollapsed = true;
   private unsubscribeDrafts: (() => void) | null = null;
   private draftBatch: { done: number; total: number } | null = null;
+  /** 메모 입력창이 열린 카드. 한 번에 하나만 연다. */
+  private memoTaskId: TaskId | null = null;
 
   constructor(
     private readonly timers: TaskTimerService,
@@ -237,6 +241,7 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
       now,
       this.reportPanelState(now),
       this.draftPanelState(now),
+      this.memoTaskId,
     );
     this.handle.setContent(content.html, content.height);
   }
@@ -387,6 +392,16 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
           this.close();
           return;
         }
+        case "toggle-memo":
+          this.memoTaskId = this.memoTaskId === action.taskId ? null : action.taskId;
+          this.update();
+          return;
+        case "save-memo": {
+          await this.tasks.appendMemo(action.taskId, action.value, this.now());
+          this.memoTaskId = null;
+          this.update();
+          return;
+        }
         case "draft-card":
           await this.fillCard(action.taskId);
           return;
@@ -475,6 +490,7 @@ export function renderTaskMenuPopover(
   now = new Date(),
   report: AiReportPanelState | null = null,
   draft: AiDraftPanelState | null = null,
+  memoTaskId: TaskId | null = null,
 ): TaskMenuPopoverContent {
   const activeTaskIds = new Set(timers.map((timer) => timer.taskId));
   const nextTasks = tasks
@@ -491,7 +507,12 @@ export function renderTaskMenuPopover(
   }).format(now);
   const taskById = new Map(tasks.map((task) => [task.id, task]));
   const focusHtml = timers.length > 0
-    ? timers.map((timer) => renderFocusCard(timer, taskById.get(timer.taskId) ?? null, draft)).join("")
+    ? timers.map((timer) => renderFocusCard(
+        timer,
+        taskById.get(timer.taskId) ?? null,
+        draft,
+        memoTaskId === timer.taskId,
+      )).join("")
     : `<div class="empty-state">
         <span class="empty-mark">✓</span>
         <strong>${escapeHtml(t("timer.popover.noFocus"))}</strong>
@@ -504,7 +525,8 @@ export function renderTaskMenuPopover(
   const rowCount = timers.reduce((sum, timer) => sum + Math.max(1, timer.steps.length), 0);
   const reportSection = report ? renderAiReportSection(report) : { html: "", height: 0 };
   const estimatedHeight =
-    250 + timers.length * 94 + rowCount * 35 + nextTasks.length * 48 + reportSection.height;
+    250 + timers.length * 94 + rowCount * 35 + nextTasks.length * 48 + reportSection.height
+    + (memoTaskId != null ? 128 : 0);
 
   return {
     html: `<div class="panel-shell">
@@ -649,6 +671,7 @@ function renderFocusCard(
   timer: TaskTimerSnapshot,
   task: Task | null,
   draft: AiDraftPanelState | null,
+  memoOpen: boolean,
 ): string {
   const phaseClass = timer.phase === "running" ? "running" : timer.phase === "paused" ? "paused" : "idle";
   const phaseLabel = timer.phase === "running"
@@ -675,11 +698,15 @@ function renderFocusCard(
       </nav>
     </div>
     ${steps}
-    ${draft && hasBlankToFill(task)
-      ? (draft.running
-        ? `<span class="draft-run busy">✨ ${escapeHtml(t("timer.popover.draftCard"))}</span>`
-        : `<a class="draft-run" href="${actionUrl("draft-card", timer.taskId)}">✨ ${escapeHtml(t("timer.popover.draftCard"))}</a>`)
-      : ""}
+    <div class="card-actions">
+      ${draft && hasBlankToFill(task)
+        ? (draft.running
+          ? `<span class="draft-run busy">✨ ${escapeHtml(t("timer.popover.draftCard"))}</span>`
+          : `<a class="draft-run" href="${actionUrl("draft-card", timer.taskId)}">✨ ${escapeHtml(t("timer.popover.draftCard"))}</a>`)
+        : ""}
+      <a class="memo-toggle${memoOpen ? " open" : ""}" href="${actionUrl("toggle-memo", timer.taskId)}">✎ ${escapeHtml(t("timer.popover.memo"))}</a>
+    </div>
+    ${memoOpen ? renderMemoForm(timer.taskId) : ""}
   </article>`;
 }
 
@@ -700,6 +727,15 @@ function renderStep(timer: TaskTimerSnapshot, value: string, index: number): str
       <span class="step-time">${formatElapsed(timer.stepElapsedMs[index] ?? 0)}</span>
     </a>
   </li>`;
+}
+
+/** 카드 본문에 바로 쓰는 메모 입력. 패널 안에서 열고 닫는다. */
+function renderMemoForm(taskId: TaskId): string {
+  return `<form class="quick-form memo-form" data-action="taskmaster-menu://save-memo">
+    <input type="hidden" name="taskId" value="${escapeHtml(taskId)}">
+    <textarea data-preserve="memo:${escapeHtml(taskId)}" name="value" rows="4" maxlength="2000" autofocus placeholder="${escapeHtml(t("timer.popover.memoPlaceholder"))}" aria-label="${escapeHtml(t("timer.popover.memoPlaceholder"))}"></textarea>
+    <button type="submit">${escapeHtml(t("timer.popover.memoSave"))}</button>
+  </form>`;
 }
 
 function renderStepForm(timers: TaskTimerSnapshot[], draft: AiDraftPanelState | null): string {
@@ -816,12 +852,18 @@ export function parseTaskMenuPopoverAction(url: string): TaskMenuPopoverAction |
     }
     const taskId = parsed.searchParams.get("taskId") as TaskId | null;
     if (!taskId) return null;
-    if (["start", "pause", "stop", "start-task", "draft-card", "park-task", "open-task"].includes(kind)) {
-      return { kind: kind as "start" | "pause" | "stop" | "start-task" | "draft-card" | "park-task" | "open-task", taskId };
+    if (["start", "pause", "stop", "start-task", "draft-card", "park-task", "open-task", "toggle-memo"].includes(kind)) {
+      return { kind: kind as "start" | "pause" | "stop" | "start-task" | "draft-card" | "park-task" | "open-task" | "toggle-memo", taskId };
     }
     if (kind === "select-step") {
       const step = Number(parsed.searchParams.get("step"));
       return Number.isInteger(step) && step > 0 ? { kind, taskId, step } : null;
+    }
+    if (kind === "save-memo") {
+      const value = parsed.searchParams.get("value") ?? "";
+      // 메모는 여러 줄이라 normalizeInput(줄바꿈을 공백으로)으로 뭉개면 안 된다.
+      const trimmed = value.trim().slice(0, 2000);
+      return trimmed ? { kind, taskId, value: trimmed } : null;
     }
     if (kind === "add-step") {
       const value = parsed.searchParams.get("value") ?? "";
@@ -1303,6 +1345,16 @@ export const POPOVER_DOCUMENT = `<!doctype html>
   .section-heading { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; }
   .section-heading h2 { flex: 1; color: #d8dbe1; font-size: 12px; font-weight: 700; letter-spacing: .01em; }
   .section-heading span { color: #7f8590; font-size: 11px; font-variant-numeric: tabular-nums; }
+  /* 카드 하단 액션 줄과 메모 입력창. */
+  .card-actions { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+  .memo-toggle { padding: 2px 6px; border-radius: 6px; color: #9aa1ad; background: rgba(255,255,255,.06); font-size: 9.5px; font-weight: 650; }
+  .memo-toggle:hover { color: #eaf2ff; background: rgba(117,180,255,.18); }
+  .memo-toggle.open { color: #10151b; background: #74b5fa; }
+  .memo-form { display: flex; align-items: flex-end; gap: 6px; margin-top: 8px; }
+  .memo-form textarea { flex: 1; min-width: 0; resize: none; padding: 7px 9px; border: 1px solid rgba(255,255,255,.12); border-radius: 9px; background: rgba(255,255,255,.05); color: #eaf2ff; font: inherit; font-size: 11px; line-height: 1.45; }
+  .memo-form textarea:focus { outline: none; border-color: rgba(117,180,255,.6); }
+  .memo-form button { flex: none; padding: 6px 10px; border: 0; border-radius: 9px; background: #74b5fa; color: #10151b; font-size: 10.5px; font-weight: 700; }
+
   /* 제목을 누르면 그 카드의 노트가 Obsidian에서 열린다. 링크처럼 안 보이게 두되
      hover에서만 밑줄로 알린다 — 패널은 읽는 화면이라 파란 링크가 시끄럽다. */
   .task-open { color: inherit; text-decoration: none; }
@@ -1463,12 +1515,22 @@ export const POPOVER_DOCUMENT = `<!doctype html>
     event.preventDefault();
     var url = new URL(form.dataset.action);
     new FormData(form).forEach(function (value, key) { url.searchParams.set(key, String(value)); });
-    var textInput = form.querySelector('input[name="value"]');
+    var textInput = form.querySelector('[name="value"]');
     if (!textInput || !textInput.value.trim()) return;
     textInput.value = "";
     dispatch(url.toString());
   });
   document.addEventListener("keydown", function (event) {
+    // 메모는 여러 줄이라 Enter가 줄바꿈이어야 한다. 제출은 ⌘/Ctrl+Enter로 받는다.
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      var area = event.target instanceof Element ? event.target.closest("form.memo-form") : null;
+      if (area) {
+        event.preventDefault();
+        if (typeof area.requestSubmit === "function") area.requestSubmit();
+        else area.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+        return;
+      }
+    }
     if (event.key === "Escape") dispatch("taskmaster-menu://close");
   });
 

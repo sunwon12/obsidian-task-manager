@@ -5,6 +5,34 @@ All notable changes to TaskMaster Obsidian plugin will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] - 2026-08-23
+
+### Added
+
+- **`✎ 메모` on every focus card.** It opens a text box inside the panel and what you write is
+  appended to that card's note body, stamped with the time:
+
+  ```
+  ## 메모
+  ### 2026-08-23
+  - 18:42 지현님 답변 대기
+  ```
+
+  Same shape as the project quick memo (ADR-0011), so a day reads top to bottom. The point is not
+  only jotting mid-task — the body is what an AI reads later when it summarizes or reviews the work,
+  and until now nothing was writing to it from the panel.
+- Existing body content is preserved: the memo is appended into (or after) a `## 메모` section, and
+  a section that follows it stays below. Multi-line memos are folded into one indented bullet.
+- Enter inserts a newline; `⌘/Ctrl+Enter` saves. The panel's submit handler used to look for
+  `input[name="value"]` only, which would have silently ignored a textarea.
+
+### Note on the shape
+
+The memo box is inline in the panel, not a second window. This plugin has already paid for extra
+native windows twice (the NSPanel investigation and the tray registry), and the panel's own
+re-render already preserves in-progress input via `data-preserve`, so an inline box is both cheaper
+and less likely to lose what you typed.
+
 ## [0.15.0] - 2026-08-23
 
 ### Added

@@ -12,6 +12,7 @@ import type {
 } from "../core/types";
 import type { BoardService } from "./BoardService";
 import type { JiraIssue } from "../repositories/JiraRepository";
+import { appendMemoToBody } from "../core/taskMemo";
 
 /**
  * Jira 이슈 1건 반영 결과.
@@ -279,6 +280,20 @@ export class TaskService {
     if (withoutTitle.length > 0) return;
     const filled = await this.tasks.writeBody(task, description);
     this.store.getState().upsertTask(filled);
+  }
+
+  /**
+   * 카드 본문에 메모 한 건을 덧붙인다. 랏코 패널에서 작업 중간에 상황을 적는 경로다.
+   * 본문 전체를 다시 쓰지만 append 결과만 쓰므로 기존 내용은 보존된다.
+   */
+  async appendMemo(taskId: TaskId, text: string, now: Date = new Date()): Promise<void> {
+    if (!text.trim()) return;
+    const task = this.requireTask(taskId);
+    const body = await this.tasks.readBody(taskId);
+    const next = appendMemoToBody(body, text, now);
+    if (next === body) return;
+    const saved = await this.tasks.writeBody(task, next);
+    this.store.getState().upsertTask({ ...saved, bodySummary: summarizeBody(next) });
   }
 
   /** UI에서 본문 보기 위해 path를 노출. open은 UI가 obsidian으로 직접. */

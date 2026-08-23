@@ -95,7 +95,7 @@ function buildGraph() {
   const taskService = new TaskService(taskRepo, boardService, store, events);
   const persistence: TimerPersistencePort = { load: async () => [], save: async () => {} };
   const timers = new TaskTimerService(events, store, taskService, persistence);
-  return { store, taskService, timers };
+  return { store, taskService, timers, taskRepo };
 }
 
 describe("TaskMenuPopover — 메뉴바 빠른 작업 패널", () => {
@@ -948,5 +948,101 @@ describe("TaskMenuPopover — 카드에서 노트 열기", () => {
     expect(parseTaskMenuPopoverAction("taskmaster-menu://open-task?taskId=task_x"))
       .toEqual({ kind: "open-task", taskId: "task_x" });
     expect(parseTaskMenuPopoverAction("taskmaster-menu://open-task")).toBeNull();
+  });
+});
+
+describe("TaskMenuPopover — 카드 메모", () => {
+  function buildPopover(graph: ReturnType<typeof buildGraph>) {
+    const handle = new FakePopoverHandle();
+    let dispatch!: (action: TaskMenuPopoverAction) => void;
+    const port: TaskMenuPopoverPort = {
+      isSupported: () => true,
+      create: (_anchor, onAction) => { dispatch = onAction; return handle; },
+      defaultAnchor: () => ({ x: 0, y: 0, width: 24, height: 24 }),
+    };
+    const popover = new TaskMenuPopover(
+      graph.timers, graph.taskService, graph.store, port,
+      vi.fn(), () => new Date("2026-08-23T18:42:00+09:00"),
+    );
+    return { popover, handle, dispatch: (action: TaskMenuPopoverAction) => dispatch(action) };
+  }
+
+  it("집중 카드마다 메모 버튼을 둔다", async () => {
+    const graph = buildGraph();
+    await graph.timers.init();
+    const task = await graph.taskService.createTask({ title: "집중 중", status: "doing" });
+
+    const content = renderTaskMenuPopover(
+      graph.timers.getTimers(),
+      [...graph.store.getState().tasks.values()],
+      new Date("2026-08-23T18:42:00+09:00"),
+    );
+
+    expect(content.html).toContain(`taskmaster-menu://toggle-memo?taskId=${task.id}`);
+    // 열기 전에는 입력창이 없다.
+    expect(content.html).not.toContain("memo-form");
+  });
+
+  it("열린 카드에만 입력창을 그린다", async () => {
+    const graph = buildGraph();
+    await graph.timers.init();
+    const opened = await graph.taskService.createTask({ title: "메모 열림", status: "doing" });
+    const other = await graph.taskService.createTask({ title: "메모 닫힘", status: "doing" });
+
+    const content = renderTaskMenuPopover(
+      graph.timers.getTimers(),
+      [...graph.store.getState().tasks.values()],
+      new Date("2026-08-23T18:42:00+09:00"),
+      null, null, opened.id,
+    );
+
+    expect(content.html).toContain(`data-preserve="memo:${opened.id}"`);
+    expect(content.html).not.toContain(`data-preserve="memo:${other.id}"`);
+    expect(content.html).toContain("taskmaster-menu://save-memo");
+  });
+
+  it("메모를 저장하면 본문에 시간과 함께 쌓이고 입력창은 닫힌다", async () => {
+    const graph = buildGraph();
+    await graph.timers.init();
+    const task = await graph.taskService.createTask({
+      title: "집중 중",
+      status: "doing",
+      body: "# 집중 중\n\n원래 설명.\n",
+    });
+    const { popover, dispatch } = buildPopover(graph);
+    expect(popover.openDefault()).toBe(true);
+
+    dispatch({ kind: "toggle-memo", taskId: task.id });
+    dispatch({ kind: "save-memo", taskId: task.id, value: "지현님 답변 대기" });
+
+    await vi.waitFor(async () => {
+      const body = await graph.taskRepo.readBody(task.id);
+      expect(body).toContain("## 메모");
+      expect(body).toContain("### 2026-08-23");
+      expect(body).toContain("- 18:42 지현님 답변 대기");
+      // 원래 본문은 그대로 남는다.
+      expect(body).toContain("원래 설명.");
+    });
+  });
+
+  it("save-memo는 줄바꿈을 공백으로 뭉개지 않는다", () => {
+    const url = "taskmaster-menu://save-memo?taskId=task_x&value=" + encodeURIComponent("첫 줄\n둘째 줄");
+    expect(parseTaskMenuPopoverAction(url)).toEqual({
+      kind: "save-memo",
+      taskId: "task_x",
+      value: "첫 줄\n둘째 줄",
+    });
+    expect(parseTaskMenuPopoverAction("taskmaster-menu://save-memo?taskId=task_x&value=%20%20")).toBeNull();
+  });
+
+  it("toggle-memo 액션 URL을 파싱한다", () => {
+    expect(parseTaskMenuPopoverAction("taskmaster-menu://toggle-memo?taskId=task_x"))
+      .toEqual({ kind: "toggle-memo", taskId: "task_x" });
+  });
+
+  it("메모는 여러 줄이라 ⌘Enter로 제출한다 (주입 스크립트 계약)", () => {
+    expect(POPOVER_DOCUMENT).toContain('event.key === "Enter" && (event.metaKey || event.ctrlKey)');
+    // input만 찾으면 textarea 폼이 조용히 제출되지 않는다.
+    expect(POPOVER_DOCUMENT).toContain("form.querySelector('[name=\"value\"]')");
   });
 });
