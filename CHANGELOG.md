@@ -5,6 +5,30 @@ All notable changes to TaskMaster Obsidian plugin will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-08-23
+
+### Added
+
+- **Drag a card between 현재 작업 and 다음 할 일 in the quick panel.** Dropping a waiting task on
+  the focus section moves it to DOING and starts its timer; dragging a focused card down to the
+  next-up list stops measuring and puts it back in TODO.
+- Dragging out is **not** the same as the ■ stop button. `stop` completes the card (status `done`)
+  and adds the measured time to `actualMd`; the drag freezes the elapsed time and per-step seconds
+  and only changes the status, so a card you picked up by mistake costs nothing to put down.
+  The timer disappears because leaving `doing` removes it — no separate teardown path.
+- The panel stops re-rendering while a drag is in flight. It repaints every second when a timer
+  runs, and replacing `innerHTML` mid-drag drops the node being dragged, which cancels the drop.
+  Pending HTML is buffered and applied on `dragend`.
+
+### Fixed
+
+- The menu bar tray now logs what it actually got: whether the icon image is empty, its size, and
+  the item's bounds right after creation and again after 2s and 8s. The value read immediately
+  after `new Tray` is pre-layout garbage (`{x:0, y:<screen height>, height:0}`); only the settled
+  read shows where the item went. Measured on this machine: `x:-4219` (off-screen, pushed there by
+  a menu bar manager) versus `x:865` with the manager quit. Without these lines the icon vanishing
+  leaves no trace anywhere, because the item lives outside every window.
+
 ## [0.11.0] - 2026-08-23
 
 ### Added

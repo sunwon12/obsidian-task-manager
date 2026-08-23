@@ -14,6 +14,7 @@ import {
   type TaskMenuPopoverPort,
   type AiReportPanelState,
   type AiDraftPanelState,
+  POPOVER_DOCUMENT,
 } from "../../../src/ui/timer/TaskMenuPopover";
 import { parseAiReport } from "../../../src/core/aiReport";
 import type { AiReportController, AiReportState } from "../../../src/services/AiReportService";
@@ -619,5 +620,93 @@ describe("TaskMenuPopover — AI 단계 초안", () => {
     expect(parseTaskMenuPopoverAction("taskmaster-menu://draft-steps?taskId=task_x"))
       .toEqual({ kind: "draft-steps", taskId: "task_x" });
     expect(parseTaskMenuPopoverAction("taskmaster-menu://draft-steps")).toBeNull();
+  });
+});
+
+describe("TaskMenuPopover — 현재 작업 ↔ 다음 할 일 드래그", () => {
+  it("두 목록의 카드에 드래그 소스와 드롭 존을 표시한다", async () => {
+    const graph = buildGraph();
+    await graph.timers.init();
+    const focus = await graph.taskService.createTask({ title: "집중 중", status: "doing" });
+    const next = await graph.taskService.createTask({ title: "다음 작업", status: "todo" });
+
+    const content = renderTaskMenuPopover(
+      graph.timers.getTimers(),
+      [...graph.store.getState().tasks.values()],
+      new Date("2026-08-22T12:00:00+09:00"),
+    );
+
+    expect(content.html).toContain(`draggable="true" data-drag="focus" data-task-id="${focus.id}"`);
+    expect(content.html).toContain(`draggable="true" data-drag="next" data-task-id="${next.id}"`);
+    expect(content.html).toContain('data-drop="focus"');
+    expect(content.html).toContain('data-drop="next"');
+  });
+
+  it("park-task 액션 URL을 파싱한다", () => {
+    expect(parseTaskMenuPopoverAction("taskmaster-menu://park-task?taskId=task_x"))
+      .toEqual({ kind: "park-task", taskId: "task_x" });
+    expect(parseTaskMenuPopoverAction("taskmaster-menu://park-task")).toBeNull();
+  });
+
+  it("다음 할 일로 끌어내면 done이 아니라 todo로 돌아가고 actualMd를 적지 않는다", async () => {
+    const graph = buildGraph();
+    await graph.timers.init();
+    const task = await graph.taskService.createTask({
+      title: "집중 중",
+      status: "doing",
+      steps: ["[실작업] 구현"],
+    });
+    const handle = new FakePopoverHandle();
+    let dispatch!: (action: TaskMenuPopoverAction) => void;
+    const port: TaskMenuPopoverPort = {
+      isSupported: () => true,
+      create: (_anchor, onAction) => { dispatch = onAction; return handle; },
+      defaultAnchor: () => ({ x: 0, y: 0, width: 24, height: 24 }),
+    };
+    const popover = new TaskMenuPopover(
+      graph.timers, graph.taskService, graph.store, port,
+      vi.fn(), () => new Date("2026-08-22T12:00:00+09:00"),
+    );
+    expect(popover.openDefault()).toBe(true);
+    graph.timers.start(task.id);
+    expect(graph.timers.getTimers()).toHaveLength(1);
+
+    dispatch({ kind: "park-task", taskId: task.id });
+    await vi.waitFor(() => {
+      expect(graph.store.getState().tasks.get(task.id)?.status).toBe("todo");
+    });
+
+    // stop()과 다르다 — 완료로 처리하거나 실적 공수를 적지 않는다.
+    expect(graph.store.getState().tasks.get(task.id)?.actualMd ?? null).toBeNull();
+    expect(graph.timers.getTimers()).toHaveLength(0);
+  });
+
+  it("이미 doing이 아닌 카드는 park-task로 건드리지 않는다", async () => {
+    const graph = buildGraph();
+    await graph.timers.init();
+    const task = await graph.taskService.createTask({ title: "대기 중", status: "todo" });
+    const handle = new FakePopoverHandle();
+    let dispatch!: (action: TaskMenuPopoverAction) => void;
+    const port: TaskMenuPopoverPort = {
+      isSupported: () => true,
+      create: (_anchor, onAction) => { dispatch = onAction; return handle; },
+      defaultAnchor: () => ({ x: 0, y: 0, width: 24, height: 24 }),
+    };
+    const popover = new TaskMenuPopover(
+      graph.timers, graph.taskService, graph.store, port,
+      vi.fn(), () => new Date("2026-08-22T12:00:00+09:00"),
+    );
+    expect(popover.openDefault()).toBe(true);
+
+    dispatch({ kind: "park-task", taskId: task.id });
+    await Promise.resolve();
+    expect(graph.store.getState().tasks.get(task.id)?.status).toBe("todo");
+  });
+
+  it("끌고 있는 동안에는 패널을 다시 그리지 않는다 (주입 스크립트 계약)", () => {
+    // innerHTML 교체가 드래그 중인 노드를 날리면 드롭이 취소된다. 이 한 줄이
+    // 빠지면 타이머가 도는 동안 드래그가 매 초 끊기고, 그 실패는 테스트로만 잡힌다.
+    expect(POPOVER_DOCUMENT).toContain("if (dragging) { pendingHtml = html; return; }");
+    expect(POPOVER_DOCUMENT).toContain('var kind = to === "focus" ? "start-task" : "park-task";');
   });
 });

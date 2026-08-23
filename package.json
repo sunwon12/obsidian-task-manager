@@ -1,6 +1,6 @@
 {
   "name": "taskmaster-plugin",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Local-first task and meeting management with React Kanban inside Obsidian.",
   "main": "dist/main.js",
   "scripts": {

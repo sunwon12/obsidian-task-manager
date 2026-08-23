@@ -75,6 +75,7 @@ export type TaskMenuPopoverAction =
   | { kind: "select-step"; taskId: TaskId; step: number }
   | { kind: "add-step"; taskId: TaskId; value: string }
   | { kind: "draft-steps"; taskId: TaskId }
+  | { kind: "park-task"; taskId: TaskId }
   | { kind: "start-task"; taskId: TaskId }
   | { kind: "create-task"; value: string };
 
@@ -340,6 +341,16 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
           await this.tasks.updateTask(task.id, { steps, currentStep: 1 });
           return;
         }
+        case "park-task": {
+          const task = this.store.getState().tasks.get(action.taskId);
+          if (!task || task.archivedAt || task.status !== "doing") return;
+          // stop()은 카드를 done으로 보내고 actualMd까지 적는다 — 여기서는 "잠시 내려놓기"라
+          // pause로 경과와 단계 시간만 얼린 뒤 상태만 되돌린다. doing에서 빠지면
+          // TaskTimerService.onEvent가 타이머를 제거한다.
+          this.timers.pause(action.taskId);
+          await this.tasks.moveTask(action.taskId, "todo");
+          return;
+        }
         case "start-task": {
           const task = this.store.getState().tasks.get(action.taskId);
           if (!task || task.archivedAt) return;
@@ -433,7 +444,7 @@ export function renderTaskMenuPopover(
 
       <main>
         ${reportSection.html}
-        <section class="section focus-section">
+        <section class="section focus-section" data-drop="focus">
           <div class="section-heading">
             <h2>${escapeHtml(t("timer.popover.focus"))}</h2>
             <span>${timers.length}</span>
@@ -442,7 +453,7 @@ export function renderTaskMenuPopover(
           ${stepForm}
         </section>
 
-        <section class="section next-section">
+        <section class="section next-section" data-drop="next">
           <div class="section-heading">
             <h2>${escapeHtml(t("timer.popover.next"))}</h2>
             <span>${nextTasks.length}</span>
@@ -560,7 +571,7 @@ function renderFocusCard(timer: TaskTimerSnapshot): string {
   const steps = timer.steps.length > 0
     ? `<ol class="step-list">${timer.steps.map((step, index) => renderStep(timer, step, index)).join("")}</ol>`
     : `<p class="step-empty">${escapeHtml(t("timer.popover.firstStepHint"))}</p>`;
-  return `<article class="focus-card ${phaseClass}">
+  return `<article class="focus-card ${phaseClass}" draggable="true" data-drag="focus" data-task-id="${escapeHtml(timer.taskId)}">
     <div class="focus-topline">
       <span class="phase-dot" aria-hidden="true"></span>
       <span class="phase-label">${escapeHtml(phaseLabel)}</span>
@@ -639,7 +650,7 @@ function renderNextTask(task: Task): string {
         ? t("timer.popover.backlog")
         : t("timer.popover.todo");
   const due = task.due ? `<span class="task-due">${escapeHtml(task.due.slice(5))}</span>` : "";
-  return `<div class="task-row">
+  return `<div class="task-row" draggable="true" data-drag="next" data-task-id="${escapeHtml(task.id)}">
     <span class="task-status">${escapeHtml(status)}</span>
     <span class="task-title scroll-title" data-scroll-key="task:${escapeHtml(task.id)}" title="${escapeHtml(task.title)}">${escapeHtml(task.title)}</span>
     ${due}
@@ -695,8 +706,8 @@ export function parseTaskMenuPopoverAction(url: string): TaskMenuPopoverAction |
     }
     const taskId = parsed.searchParams.get("taskId") as TaskId | null;
     if (!taskId) return null;
-    if (["start", "pause", "stop", "start-task", "draft-steps"].includes(kind)) {
-      return { kind: kind as "start" | "pause" | "stop" | "start-task" | "draft-steps", taskId };
+    if (["start", "pause", "stop", "start-task", "draft-steps", "park-task"].includes(kind)) {
+      return { kind: kind as "start" | "pause" | "stop" | "start-task" | "draft-steps" | "park-task", taskId };
     }
     if (kind === "select-step") {
       const step = Number(parsed.searchParams.get("step"));
@@ -1155,7 +1166,8 @@ function closeExistingPopovers(remote: ElectronRemoteLike): void {
   }
 }
 
-const POPOVER_DOCUMENT = `<!doctype html>
+/** 패널 문서 전문. 주입 스크립트의 계약(드래그 중 갱신 보류 등)을 테스트가 대조한다. */
+export const POPOVER_DOCUMENT = `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><title>${POPOVER_TITLE}</title><style>
   :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", sans-serif; }
   * { box-sizing: border-box; }
@@ -1181,6 +1193,12 @@ const POPOVER_DOCUMENT = `<!doctype html>
   .section-heading { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; }
   .section-heading h2 { flex: 1; color: #d8dbe1; font-size: 12px; font-weight: 700; letter-spacing: .01em; }
   .section-heading span { color: #7f8590; font-size: 11px; font-variant-numeric: tabular-nums; }
+  /* 드래그로 현재 작업 ↔ 다음 할 일 이동. 끌 수 있다는 신호를 커서로 준다. */
+  [data-drag] { cursor: grab; }
+  [data-drag]:active { cursor: grabbing; }
+  .dragging { opacity: .45; }
+  [data-drop].drop-target { outline: 1px dashed rgba(117,180,255,.75); outline-offset: 2px; border-radius: 10px; background: rgba(117,180,255,.08); }
+
   /* AI 단계 초안 — 단계 입력 폼 바로 위 한 줄. 실패도 같은 자리에 남긴다. */
   .draft-row { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; font-size: 10.5px; }
   .draft-row.running { color: #8ec5ff; font-variant-numeric: tabular-nums; }
@@ -1271,7 +1289,12 @@ const POPOVER_DOCUMENT = `<!doctype html>
   .scroll-title::-webkit-scrollbar { display: none; height: 0; width: 0; }
 </style></head><body><div id="app"></div><script>
   if (location.hash === "#opaque") document.documentElement.classList.add("opaque");
+  // 타이머가 돌면 패널은 매 초 innerHTML을 통째로 갈아끼운다. 드래그 도중 그러면
+  // 잡고 있던 노드가 사라져 드롭이 취소된다 — 끌고 있는 동안은 갱신을 미룬다.
+  var dragging = null;
+  var pendingHtml = null;
   window.__taskmasterSetContent = function (html) {
+    if (dragging) { pendingHtml = html; return; }
     var app = document.getElementById("app");
     var previousMain = app.querySelector("main");
     var scrollTop = previousMain ? previousMain.scrollTop : 0;
@@ -1325,5 +1348,56 @@ const POPOVER_DOCUMENT = `<!doctype html>
   });
   document.addEventListener("keydown", function (event) {
     if (event.key === "Escape") dispatch("taskmaster-menu://close");
+  });
+
+  function clearDropHints() {
+    var marked = document.querySelectorAll(".drop-target, .dragging");
+    for (var i = 0; i < marked.length; i += 1) {
+      marked[i].classList.remove("drop-target");
+      marked[i].classList.remove("dragging");
+    }
+  }
+  function dropZoneOf(target) {
+    return target instanceof Element ? target.closest("[data-drop]") : null;
+  }
+  document.addEventListener("dragstart", function (event) {
+    var source = event.target instanceof Element ? event.target.closest("[data-drag]") : null;
+    if (!source) return;
+    dragging = { id: source.getAttribute("data-task-id"), from: source.getAttribute("data-drag") };
+    source.classList.add("dragging");
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+      try { event.dataTransfer.setData("text/plain", dragging.id); } catch (err) { /* 일부 환경은 거부한다 */ }
+    }
+  });
+  document.addEventListener("dragend", function () {
+    dragging = null;
+    clearDropHints();
+    if (pendingHtml != null) { var html = pendingHtml; pendingHtml = null; window.__taskmasterSetContent(html); }
+  });
+  document.addEventListener("dragover", function (event) {
+    if (!dragging) return;
+    var zone = dropZoneOf(event.target);
+    if (!zone || zone.getAttribute("data-drop") === dragging.from) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    zone.classList.add("drop-target");
+  });
+  document.addEventListener("dragleave", function (event) {
+    var zone = dropZoneOf(event.target);
+    if (zone && !zone.contains(event.relatedTarget)) zone.classList.remove("drop-target");
+  });
+  document.addEventListener("drop", function (event) {
+    if (!dragging) return;
+    var zone = dropZoneOf(event.target);
+    if (!zone) return;
+    var to = zone.getAttribute("data-drop");
+    if (to === dragging.from) return;
+    event.preventDefault();
+    var kind = to === "focus" ? "start-task" : "park-task";
+    var id = dragging.id;
+    dragging = null;
+    clearDropHints();
+    dispatch("taskmaster-menu://" + kind + "?taskId=" + encodeURIComponent(id));
   });
 </script></body></html>`;
