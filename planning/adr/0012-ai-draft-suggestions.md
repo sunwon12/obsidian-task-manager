@@ -1,9 +1,8 @@
 # ADR-0012: AI 초안은 JSON만 반환하고 적용은 TaskService를 탄다
 
-- **Status**: Accepted
-- **Date**: 2026-08-23
-- **Deciders**: 제품/엔지니어링
-- **Related**: ADR-0001(hybrid storage), ADR-0005(metadata cache first), v0.10.0 AI 리포트, vault 노트 `TaskMaster 작업 step 쪼개기와 AI 위임 경계`
+## Date
+
+2026-08-23
 
 ## Context
 
@@ -17,9 +16,7 @@ v0.10.0에서 `claude -p`를 헤드리스로 돌리는 경로(`AiReportService` 
 
 ### 1. AI는 JSON만 반환하고, 파일은 절대 직접 고치지 않는다
 
-`claude -p --output-format json`의 stdout을 파싱해 제안 객체를 얻고, 적용은 기존 `TaskService.updateTask`를 탄다.
-
-거부한 대안: 리포트처럼 `--permission-mode acceptEdits`로 카드 `.md`를 직접 쓰게 하기. `Task.knownMtime` 기반 conflict detection과 정면으로 부딪히고, `passthrough`(ADR-0008)와 `fieldOrder` 보존이 깨진다. `TaskService`를 타면 그 둘이 공짜로 따라온다.
+`claude -p --output-format json`의 stdout을 파싱해 제안 객체를 얻고, 적용은 기존 `TaskService.updateTask`를 탄다. 리포트처럼 `--permission-mode acceptEdits`로 카드 `.md`를 직접 쓰게 하면 `Task.knownMtime` 기반 conflict detection과 정면으로 부딪히고, `passthrough`([ADR-0008](./0008-frontmatter-passthrough.md))와 `fieldOrder` 보존이 깨진다. `TaskService`를 타면 그 둘이 공짜로 따라온다.
 
 ### 2. 적용은 통짜 덮어쓰기가 아니라 필드별 수락/거절이다
 
@@ -48,41 +45,23 @@ v0.10.0에서 `claude -p`를 헤드리스로 돌리는 경로(`AiReportService` 
 
 ## Alternatives Considered
 
-### A. Anthropic API를 직접 호출한다
-
-거부: API 키 관리가 새로 생기고, 무엇보다 **vault를 못 읽는다**. 이 기능의 값어치는 모델이 아니라 "과거 카드·Jira 티켓·관련 노트를 읽고 그때 쓴 단계를 재사용한다"에 있다. `claude -p`가 vault를 cwd로 돌면 그게 공짜다.
-
-### B. 스트리밍으로 부분 결과를 보여준다
-
-거부: 적용 단위가 필드별 원자 선택이라 부분 결과가 쓸모없다. 진행 표시는 경과 초 카운터로 충분하다(리포트에서 검증된 UI).
-
-### C. 한 번의 실행으로 모든 필드를 채운다
-
-부분 채택: 실행은 하나지만 **경로를 둘로 나눈다.** 빠른 경로는 카드 본문만 보고 5~15초 안에 `priority`·`tags`·`remarks`를, 깊은 경로는 과거 카드까지 뒤져 1~2분 걸려 `steps`를 만든다. 리포트 실측이 2분 16초였고, 카드 하나 열 때마다 그만큼 기다릴 수는 없다.
+| 옵션 | 장점 | 단점 | 탈락 사유 |
+| --- | --- | --- | --- |
+| A. Anthropic API를 직접 호출 | CLI 의존이 사라짐 | API 키 관리가 새로 생기고, **vault를 못 읽는다** | 이 기능의 값어치는 모델이 아니라 "과거 카드·Jira 티켓·관련 노트를 읽고 그때 쓴 단계를 재사용한다"에 있다. `claude -p`가 vault를 cwd로 돌면 그게 공짜다 |
+| B. 스트리밍으로 부분 결과 표시 | 기다리는 체감이 짧아짐 | 적용 단위가 필드별 원자 선택이라 부분 결과가 쓸모없음 | 진행 표시는 경과 초 카운터로 충분하다(리포트에서 검증된 UI) |
+| C. 한 번의 실행으로 모든 필드를 채움 | 호출이 하나라 단순 | 과거 카드까지 뒤지면 1~2분이 걸림 | **부분 채택** — 실행은 하나지만 경로를 둘로 나눈다. 빠른 경로는 카드 본문만 보고 5~15초 안에 `priority`·`tags`·`remarks`를, 깊은 경로는 과거 카드까지 뒤져 `steps`를 만든다. 리포트 실측이 2분 16초였고, 카드 하나 열 때마다 그만큼 기다릴 수는 없다 |
+| D. 카드 `.md`를 AI가 직접 편집 (채택 1의 반대안) | 플러그인 쪽 적용 코드가 필요 없음 | `knownMtime` conflict detection과 충돌하고 `passthrough`·`fieldOrder`가 깨짐 | 위 Decision 1의 근거 그대로 |
 
 ## Consequences
 
-### Positive
+- **긍정적**: 카드를 채우는 비용이 내려가 `steps`가 실제로 쌓이기 시작한다. 그게 종류별 시간 분포(M2)와 단계 단위 위임(M3)의 전제다. 적용이 `TaskService`를 타므로 conflict·passthrough·fieldOrder 처리가 한 곳에 남는다. 파싱이 순수 함수라 프롬프트를 바꿔도 회귀 테스트가 붙는다.
+- **부정적**: `claude` CLI에 의존한다. 없으면 기능이 통째로 비활성이다(리포트와 같은 제약). 깊은 경로는 느리고, 사용자가 모달을 닫으면 결과가 버려진다.
+- **리스크**: 접두어는 자유 문자열이라 사용자가 오타를 내면 분류에서 빠진다. 완화 — 파서는 알 수 없는 접두어를 종류 없음으로 처리하고 UI에서 회색으로 표시하며, 접두어 상수와 정규식은 `core/aiDraft.ts` 한 곳이 소유해 UI·파서가 함께 참조한다. 실패는 조용히 사라지지 않고 모달 안에 한 줄 사유로 남긴다(바이너리 없음·타임아웃·비정상 종료·JSON 파싱 실패). 프롬프트에 "30분 이하로 끝나는 카드는 단계를 만들지 않는다"를 명시하지 않으면 잡무 카드에도 5단계를 붙인다.
+- **검증**: `core/aiDraft` 단위 테스트(JSON envelope 파싱, 코드펜스로 감싼 응답, 잘린 응답, 알 수 없는 필드 무시, 접두어 정규화, 단계 개수 상한). `AiDraftService` 테스트(중복 실행 합류, 타임아웃 메시지, 미지원 환경). UI 테스트(값이 있는 필드는 기본 미선택, 수락한 필드만 `onSave` 입력에 실린다, `steps`가 있으면 비평만 표시하고 덮어쓰기 버튼이 없다). 실행 어댑터 테스트(`window.require` 스텁으로 인자·PATH 보정·ENOENT·타임아웃). 실제 카드 3장(Jira 구현·조사·잡무)에 돌려 초안 품질과 30분 예외 준수를 확인.
 
-- 카드를 채우는 비용이 내려가 `steps`가 실제로 쌓이기 시작한다. 그게 종류별 시간 분포(M2)와 단계 단위 위임(M3)의 전제다.
-- 적용이 `TaskService`를 타므로 conflict·passthrough·fieldOrder 처리가 한 곳에 남는다.
-- 파싱이 순수 함수라 프롬프트를 바꿔도 회귀 테스트가 붙는다.
+## References
 
-### Negative
-
-- `claude` CLI에 의존한다. 없으면 기능이 통째로 비활성이다(리포트와 같은 제약).
-- 깊은 경로는 느리다. 사용자가 모달을 닫으면 결과가 버려진다.
-- 접두어는 자유 문자열이라 사용자가 오타를 내면 분류에서 빠진다. 파서는 알 수 없는 접두어를 종류 없음으로 처리하고 UI에서 회색으로 표시한다.
-
-### Mitigation
-
-- 실패는 조용히 사라지지 않고 모달 안에 한 줄 사유로 남긴다(바이너리 없음·타임아웃·비정상 종료·JSON 파싱 실패).
-- 프롬프트에 "30분 이하로 끝나는 카드는 단계를 만들지 않는다"를 명시한다. 명시하지 않으면 잡무 카드에도 5단계를 붙인다.
-- 접두어 상수와 정규식은 `core/aiDraft.ts` 한 곳이 소유하고 UI·파서가 함께 참조한다.
-
-## Validation
-
-- `core/aiDraft` 단위 테스트: JSON envelope 파싱, 코드펜스로 감싼 응답, 잘린 응답, 알 수 없는 필드 무시, 접두어 정규화, 단계 개수 상한.
-- `AiDraftService` 테스트: 중복 실행 합류, 타임아웃 메시지, 미지원 환경.
-- UI 테스트: 값이 있는 필드는 기본 미선택, 수락한 필드만 `onSave` 입력에 실린다, `steps`가 있으면 비평만 표시하고 덮어쓰기 버튼이 없다.
-- Manual QA: 실제 카드 3장(Jira 구현·조사·잡무)에 돌려 초안 품질과 30분 예외 준수를 확인한다.
+- 관련 ADR: [ADR-0001](./0001-hybrid-storage.md), [ADR-0005](./0005-metadata-cache-first.md), [ADR-0008](./0008-frontmatter-passthrough.md)
+- 상위 지식베이스 ADR: `docs/adr/adr-002-TaskMaster-카드-단계에-종류-접두어를-쓴다.md` (카드 데이터 형식 결정)
+- 정의 본문: 지식베이스 `01_개발/09_옵시디언/TaskMaster-작업-step-쪼개기와-AI-위임-경계.md`
+- 관련 문서: v0.10.0 AI 리포트 (CHANGELOG)

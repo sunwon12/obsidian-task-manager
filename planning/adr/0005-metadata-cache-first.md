@@ -1,9 +1,8 @@
 # ADR-0005: 보드 스캔에 metadataCache 우선 사용
 
-- **Status**: Accepted
-- **Date**: 2026-05-10
-- **Deciders**: 엔지니어링
-- **Related**: PRD §10.2, PLAN §3 Repository, §10
+## Date
+
+2026-05-10
 
 ## Context
 
@@ -38,44 +37,20 @@ read API 사용 분기:
 
 ## Alternatives Considered
 
-### A. 모든 파일을 `vault.read()`로 스캔
-
-장점: 명확하고 단순.
-
-거부 이유: 큰 Vault에서 5~15초 소요. 사용자 경험 열악.
-
-### B. `vault.cachedRead()`로 통일
-
-장점: read API 하나만 쓰면 됨. cachedRead는 metadataCache가 알고 있는 마지막 내용을 반환.
-
-거부 이유: cachedRead도 본문 전체를 메모리에 올림. 보드 렌더링에는 frontmatter만 필요한데 본문까지 로드하는 것은 낭비. 5000개 파일 × 평균 2KB = 10MB가 즉시 메모리에 상주.
-
-### C. 직접 캐시를 빌드해서 유지
-
-장점: Obsidian API 변동에서 자유로움.
-
-거부 이유: Obsidian이 이미 잘 만들어진 캐시를 가지고 있는데 중복 구현. metadataCache의 `changed` event를 구독하면 우리도 자동 업데이트됨.
+| 옵션 | 장점 | 단점 | 탈락 사유 |
+| --- | --- | --- | --- |
+| A. 모든 파일을 `vault.read()`로 스캔 | 명확하고 단순 | 큰 Vault에서 5~15초 소요 | 사용자 경험이 열악하다 |
+| B. `vault.cachedRead()`로 통일 | read API 하나만 쓰면 됨. metadataCache가 아는 마지막 내용을 반환 | 본문 전체를 메모리에 올림 (5000개 × 평균 2KB = 10MB 상주) | 보드 렌더링에는 frontmatter만 필요한데 본문까지 로드하는 것은 낭비다 |
+| C. 직접 캐시를 빌드해서 유지 | Obsidian API 변동에서 자유로움 | 이미 있는 캐시를 중복 구현 | metadataCache의 `changed` event를 구독하면 우리도 자동 업데이트된다 |
 
 ## Consequences
 
-### Positive
+- **긍정적**: 5000개 노트 Vault에서 보드 초기 렌더링이 5초 → ~100ms로 단축된다. `metadataCache.on('changed', ...)`를 구독하면 외부 modify에도 빠르게 반응한다. 본문을 안 올리므로 메모리 사용량도 줄어든다.
+- **부정적**: metadataCache는 Obsidian의 internal API에 가까워 향후 API 변경에 더 민감하다. 본문이 필요한 액션마다 별도 read 호출이 필요하다.
+- **리스크**: API가 바뀌면 보드 스캔이 통째로 깨진다. 완화 — metadataCache는 Obsidian sample plugin과 다수 community plugin이 쓰는 잘 알려진 패턴이라 변경 risk가 낮고, 본문 lazy load는 detail panel·export 같은 명시적 액션에서만 발생해 영향이 미미하다. TaskRepository는 `findAll`(frontmatter only)과 `readBody(taskId)`를 분리해 호출자가 헷갈리지 않게 한다.
+- **검증**: 1000개 task fixture로 초기 렌더링 시간 측정 → 1초 이내(PRD §10.2). metadataCache가 부재한(캐시 미빌드) 상황을 시뮬레이션해 graceful degradation 확인.
 
-- 5000개 노트 Vault에서 보드 초기 렌더링이 5초 → ~100ms로 단축.
-- Obsidian의 metadataCache 변경 이벤트(`metadataCache.on('changed', ...)`)를 구독하면 외부 modify에도 빠르게 반응.
-- 메모리 사용량 감소 (본문 안 로드).
+## References
 
-### Negative
-
-- metadataCache는 Obsidian의 internal API에 가까움. 향후 API 변경에 더 민감.
-- 본문이 필요한 액션마다 별도 read 호출 필요.
-
-### Mitigation
-
-- metadataCache는 Obsidian sample plugin과 다수의 community plugin이 사용하는 잘 알려진 패턴. API 변경 risk 낮음.
-- 본문 lazy load는 detail panel 또는 export 같은 명시적 액션에서만 발생하므로 영향 미미.
-- TaskRepository에 `findAll`(frontmatter only)과 `readBody(taskId)` 두 가지 API를 분리해 호출자가 헷갈리지 않게 함.
-
-## Validation
-
-- 1000개 task fixture로 초기 렌더링 시간 측정 → 1초 이내 (PRD §10.2).
-- metadataCache가 부재한 (캐시 미빌드) 상황을 시뮬레이션해 graceful degradation 확인.
+- 관련 ADR: [ADR-0008](./0008-frontmatter-passthrough.md)
+- 관련 문서: PRD §10.2, PLAN §3 Repository, §10

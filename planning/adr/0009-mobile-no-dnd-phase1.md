@@ -1,9 +1,8 @@
 # ADR-0009: Phase 1 모바일은 dnd 미사용, 명시적 액션 버튼만
 
-- **Status**: Accepted
-- **Date**: 2026-05-10
-- **Deciders**: 제품/엔지니어링
-- **Related**: PRD §8.2, §13.6, PLAN §14
+## Date
+
+2026-05-10
 
 ## Context
 
@@ -29,43 +28,19 @@ dnd-kit 자체는 데스크탑 빌드에 필요하므로 dependency는 그대로
 
 ## Alternatives Considered
 
-### A. dnd 제공 + 모바일 한계 받아들임
-
-장점: feature parity.
-
-거부 이유: 사용자가 첫 사용에서 "이거 안 되네" 경험을 하면 다시 안 옴. high-friction 경험을 안 주는 게 안 주는 것보다 낫다.
-
-### B. dnd 대체 라이브러리 (react-beautiful-dnd 등)
-
-장점: 일부 라이브러리는 모바일이 더 나음.
-
-거부 이유: 데스크탑 dnd-kit과 모바일 다른 라이브러리 두 개를 유지하는 비용. 라이브러리간 동작 차이로 mental model 분기.
-
-### D. 모바일에서 long-press → modal로 status 선택
-
-장점: 가능한 경험.
-
-거부 이유: 액션 버튼 한 번 vs long-press + modal 선택 두 단계. 액션 버튼이 더 빠르고 명확.
+| 옵션 | 장점 | 단점 | 탈락 사유 |
+| --- | --- | --- | --- |
+| A. dnd 제공 + 모바일 한계 받아들임 | feature parity | 위 네 가지 한계가 그대로 사용자에게 노출됨 | 첫 사용에서 "이거 안 되네" 경험을 하면 다시 안 온다. high-friction 경험을 주는 것보다 안 주는 게 낫다 |
+| B. dnd 대체 라이브러리 (react-beautiful-dnd 등) | 일부 라이브러리는 모바일이 더 나음 | 데스크탑 dnd-kit과 모바일 다른 라이브러리 두 개를 유지해야 함 | 라이브러리 간 동작 차이로 mental model이 분기한다 |
+| C. 모바일에서 long-press → modal로 status 선택 | 가능한 경험 | 액션 버튼 한 번 vs long-press + modal 선택 두 단계 | 액션 버튼이 더 빠르고 명확하다 |
 
 ## Consequences
 
-### Positive
+- **긍정적**: 모바일에서 즉각적이고 예측 가능한 UX가 된다. dnd touch sensor 디버깅 시간을 Phase 1에서 절약한다. 액션 버튼은 a11y에도 자연스럽다(키보드·screen reader 호환).
+- **부정적**: 데스크탑과 모바일의 인터랙션 모델이 달라 사용자가 두 가지를 학습해야 한다. 한 번에 여러 카드를 정렬하는 데스크탑 dnd 경험을 모바일에서 못 한다.
+- **리스크**: 액션 버튼을 못 찾으면 모바일에서 카드를 아예 못 옮긴다고 느낄 수 있다. 완화 — 버튼 디자인을 명확히 해 즉시 발견되게 하고, 모바일 dnd는 Phase 4에서 별도로 검토한다(PRD §14.4).
+- **검증**: iOS Obsidian과 Android Obsidian에서 status tab 전환과 액션 버튼 동작 확인(수동 QA checklist). 모바일에서 view를 5회 open/close 반복 시 메모리 leak이 없는지 확인.
 
-- 모바일에서 즉각적이고 예측 가능한 UX.
-- dnd touch sensor 디버깅 시간을 Phase 1에서 절약.
-- 액션 버튼은 a11y에도 자연스러움 (키보드/screen reader 호환).
+## References
 
-### Negative
-
-- 데스크탑과 모바일의 인터랙션 모델이 다름 (사용자가 두 가지를 학습).
-- 한 번에 여러 카드를 정렬하는 데스크탑 dnd 경험을 모바일에서 못 함.
-
-### Mitigation
-
-- 액션 버튼 디자인을 명확하게 해 사용자가 즉시 발견할 수 있게 함.
-- Phase 4에서 모바일 dnd를 별도로 검토 (PRD §14.4).
-
-## Validation
-
-- iOS Obsidian과 Android Obsidian에서 status tab 전환과 액션 버튼 동작 확인 (수동 QA checklist).
-- 모바일에서 view를 5회 open/close 반복 시 메모리 leak 없는지 확인.
+- 관련 문서: PRD §8.2, §13.6, §14.4, PLAN §14

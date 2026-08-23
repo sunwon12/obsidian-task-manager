@@ -1,9 +1,8 @@
 # ADR-0003: ULID 기반 ID와 short ID 파일명
 
-- **Status**: Accepted
-- **Date**: 2026-05-10
-- **Deciders**: 제품/엔지니어링
-- **Related**: PRD §9.5, PLAN §5
+## Date
+
+2026-05-10
 
 ## Context
 
@@ -13,12 +12,7 @@
 - 두 device에서 동시에 새 entity를 만들어도 충돌 가능성이 매우 낮아야 함.
 - 사람이 읽을 때 부담스럽지 않아야 함 (file explorer에서 100자 hash가 나오면 안 됨).
 
-후보:
-
-1. UUID v4 (36자 hex)
-2. ULID (26자 Crockford Base32, 시간 정렬 가능)
-3. NanoID (configurable 길이)
-4. timestamp + counter
+후보는 UUID v4(36자 hex), ULID(26자 Crockford Base32, 시간 정렬 가능), NanoID(configurable 길이), timestamp + counter 넷이다.
 
 ## Decision
 
@@ -35,51 +29,20 @@ frontmatter id: task_01HX7SM2J6K4XQ7EV6C8T92PPW
 
 ## Alternatives Considered
 
-### A. UUID v4
-
-장점: 표준이며 어디서나 동작.
-
-거부 이유: 36자가 파일명에 그대로 들어가면 시각적 노이즈가 큼. 시간 정렬 불가하여 file explorer가 직관적이지 않음.
-
-### B. NanoID 짧은 길이
-
-장점: 가장 짧음 (8~12자도 가능).
-
-거부 이유: 시간 정렬 안 됨. 충돌 가능성을 ULID 수준으로 낮추려면 결국 비슷한 길이가 됨.
-
-### C. timestamp + counter
-
-장점: 매우 짧음.
-
-거부 이유: 두 device 동시 생성 시 충돌 가능. 충돌을 피하려고 device ID를 추가하면 결국 ULID와 비슷해짐.
-
-### D. 파일명에 풀 ULID
-
-장점: short ID 충돌 처리 로직이 필요 없음.
-
-거부 이유: file explorer 가독성이 매우 떨어짐. 사용자의 인지 부담이 큼.
+| 옵션 | 장점 | 단점 | 탈락 사유 |
+| --- | --- | --- | --- |
+| A. UUID v4 | 표준이며 어디서나 동작 | 36자가 파일명에 그대로 들어가면 시각적 노이즈가 큼. 시간 정렬 불가 | file explorer가 직관적이지 않다 |
+| B. NanoID 짧은 길이 | 가장 짧음 (8~12자도 가능) | 시간 정렬 안 됨 | 충돌 가능성을 ULID 수준으로 낮추려면 결국 비슷한 길이가 된다 |
+| C. timestamp + counter | 매우 짧음 | 두 device 동시 생성 시 충돌 가능 | 충돌을 피하려고 device ID를 추가하면 결국 ULID와 비슷해진다 |
+| D. 파일명에 풀 ULID | short ID 충돌 처리 로직이 필요 없음 | file explorer 가독성이 매우 떨어짐 | 사용자의 인지 부담이 크다 |
 
 ## Consequences
 
-### Positive
+- **긍정적**: 시간 정렬이 가능하다(ULID는 첫 10자가 timestamp). 두 device 동시 생성 시 충돌 가능성이 매우 낮다(80 bit randomness). 파일명이 짧고 직관적이다(`웹사이트 리뉴얼 - task_01HX7SM2.md`).
+- **부정적**: short ID 충돌 처리 로직이 필요하다(드물지만 가능). `ulid` 라이브러리 의존성이 추가된다.
+- **리스크**: short ID가 충돌하면 파일명이 길어져 가독성 이점이 줄어든다. 완화 — 충돌 처리는 자동 길이 확장 알고리즘으로 단순화하고, 생성 함수는 단위 테스트로 검증한다(PRD §10.7). `ulid` npm 패키지는 ~1KB로 번들 영향이 미미하다.
+- **검증**: ULID 1만 개 생성 후 앞 8자 충돌 빈도 측정(이론상 매우 낮음, 실측으로도 확인). short ID 충돌 시 자동 확장 로직 단위 테스트. 사용자가 파일명을 직접 변경해도 entity 매칭이 frontmatter `id` 기준으로 유지되는지 수동 QA.
 
-- 시간 정렬 가능 (ULID는 첫 10자가 timestamp).
-- 두 device 동시 생성 시 충돌 가능성 매우 낮음 (80 bit randomness).
-- 파일명이 짧고 직관적 (`웹사이트 리뉴얼 - task_01HX7SM2.md`).
+## References
 
-### Negative
-
-- short ID 충돌 처리 로직이 필요 (드물지만 가능).
-- ULID 라이브러리 의존성 추가.
-
-### Mitigation
-
-- short ID 충돌 처리는 자동 길이 확장 알고리즘으로 단순화.
-- `ulid` npm 패키지는 ~1KB로 번들 영향 미미.
-- short ID 생성 함수는 단위 테스트로 검증 (PRD §10.7).
-
-## Validation
-
-- ULID 1만 개 생성 후 앞 8자 충돌 빈도 측정 (이론상 매우 낮음, 실측으로도 확인).
-- short ID 충돌 시 자동 확장 로직 단위 테스트.
-- 사용자가 파일명을 직접 변경해도 entity 매칭이 frontmatter `id` 기준으로 유지되는지 수동 QA.
+- 관련 문서: PRD §9.5, §10.7, PLAN §5

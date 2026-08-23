@@ -1,9 +1,8 @@
 # ADR-0004: 의미 데이터는 즉시 flush, 시각 데이터는 debounce
 
-- **Status**: Accepted
-- **Date**: 2026-05-10
-- **Deciders**: 제품/엔지니어링
-- **Related**: PRD §7.3, §10.2, §13.5, PLAN §7, §10, ADR-0001
+## Date
+
+2026-05-10
 
 ## Context
 
@@ -32,44 +31,20 @@ debounce를 모든 write에 일괄 적용하면 의미 있는 변경(status, arc
 
 ## Alternatives Considered
 
-### A. 모든 write를 즉시 flush
-
-장점: 손실 위험 zero. 정책 단순.
-
-거부 이유: 카드 reorder 1초 동안 5번 일어나면 5번 모두 disk write. sync tool에 노이즈, 사용자가 인지 가능한 lag.
-
-### B. 모든 write를 debounce
-
-장점: I/O 최소화.
-
-거부 이유: onunload sync 제약으로 의미 데이터가 손실 가능. 사용자가 status를 바꾸고 곧바로 Obsidian을 닫으면 그 변경이 사라짐.
-
-### C. 모든 write를 debounce + onunload에서 sync flush 시도
-
-장점: 비용과 안전성 둘 다.
-
-거부 이유: Obsidian의 `Vault.modify()`는 inherently async이고 onunload는 promise를 안 기다림. 안전성을 보장할 수 없다.
+| 옵션 | 장점 | 단점 | 탈락 사유 |
+| --- | --- | --- | --- |
+| A. 모든 write를 즉시 flush | 손실 위험 zero. 정책 단순 | 카드 reorder가 1초에 5번 일어나면 5번 모두 disk write | sync tool에 노이즈가 생기고 사용자가 인지 가능한 lag이 발생한다 |
+| B. 모든 write를 debounce | I/O 최소화 | onunload sync 제약으로 의미 데이터가 손실 가능 | 사용자가 status를 바꾸고 곧바로 Obsidian을 닫으면 그 변경이 사라진다 |
+| C. 모든 write를 debounce + onunload에서 sync flush 시도 | 비용과 안전성 둘 다 노림 | `Vault.modify()`는 inherently async이고 onunload는 promise를 안 기다림 | 안전성을 보장할 수 없다 |
 
 ## Consequences
 
-### Positive
+- **긍정적**: 의미 데이터는 절대 손실되지 않는다. 시각 데이터는 debounce로 disk I/O를 최소화한다. 정책이 명확해 새 기능 추가 시 분기가 쉽다("이 변경은 잃어도 회복 가능한가?").
+- **부정적**: TaskRepository에 `saveImmediate`와 `queueSave` 두 가지 API가 존재한다. 새 기능 추가 시 어느 정책을 쓸지 매번 판단해야 한다.
+- **리스크**: 판단을 잘못해 의미 데이터에 `queueSave`를 쓰면 손실 경로가 다시 열린다. 완화 — 정책은 TaskService 메서드에서 결정해 React 쪽 호출자가 의식하지 않게 하고, 기본은 `saveImmediate`로 두며 `queueSave`는 high-frequency가 입증된 경우만 쓴다. 코드 리뷰 체크리스트에 "이 변경은 손실되어도 회복 가능한가?" 항목을 넣는다.
+- **검증**: onunload 시점에 pending Markdown write가 0인지 단위 테스트로 검증. card drag 1초 동안 Vault write 호출이 task당 1회 이하인지 정량 측정(PRD §10.2, §12.2).
 
-- 의미 데이터는 절대 손실되지 않음.
-- 시각 데이터는 debounce로 disk I/O 최소화.
-- 정책이 명확해 새 기능 추가 시 분기가 쉬움 ("이 변경은 잃어도 회복 가능한가?").
+## References
 
-### Negative
-
-- TaskRepository에 `saveImmediate`와 `queueSave` 두 가지 API가 존재.
-- 새 기능 추가 시 어느 정책을 쓸지 매번 판단해야 함.
-
-### Mitigation
-
-- TaskService 메서드에서 정책을 결정해 React 쪽 호출자는 의식하지 않아도 됨.
-- 기본은 `saveImmediate`. `queueSave`는 명시적으로 high-frequency가 입증된 경우만 사용.
-- 코드 리뷰 체크리스트에 "이 변경은 손실되어도 회복 가능한가?" 항목 추가.
-
-## Validation
-
-- onunload 시점에 pending Markdown write가 0인지 단위 테스트로 검증.
-- card drag 1초 동안 Vault write 호출이 task당 1회 이하인지 정량 측정 (PRD §10.2, §12.2).
+- 관련 ADR: [ADR-0001](./0001-hybrid-storage.md)
+- 관련 문서: PRD §7.3, §10.2, §13.5, PLAN §7, §10

@@ -1,9 +1,8 @@
 # ADR-0006: Tailwind v3 + `tm-` prefix + scoped CSS
 
-- **Status**: Accepted
-- **Date**: 2026-05-10
-- **Deciders**: 엔지니어링
-- **Related**: PRD §8.6, §13.4, PLAN §2, §8
+## Date
+
+2026-05-10
 
 ## Context
 
@@ -46,52 +45,20 @@ module.exports = {
 
 ## Alternatives Considered
 
-### A. Tailwind v4
-
-장점: 최신 버전.
-
-거부 이유: prefix와 preflight API가 변경되어 안정성 떨어짐. Obsidian 환경에서의 검증 사례 부족.
-
-### B. Tailwind 없이 CSS Modules 또는 vanilla CSS
-
-장점: 의존성 0. 충돌 가능성 낮음.
-
-거부 이유: 기존 React 앱이 Tailwind 기반. 재작성 비용 큼. utility class의 개발 속도 이점 포기.
-
-### C. Tailwind preflight 유지 + iframe 격리
-
-장점: 완전한 격리.
-
-거부 이유: Obsidian View 안의 iframe은 ItemView API와 마찰. event/keyboard handler가 부자연스러움.
-
-### D. Tailwind + prefix 없이 그냥 사용
-
-장점: 마크업 깔끔.
-
-거부 이유: utility class 충돌 가능성 매우 높음 (`flex`, `block`, `hidden`은 모든 CSS에 흔함).
+| 옵션 | 장점 | 단점 | 탈락 사유 |
+| --- | --- | --- | --- |
+| A. Tailwind v4 | 최신 버전 | prefix와 preflight API가 변경 중 | Obsidian 환경에서의 검증 사례가 부족해 안정성이 떨어진다 |
+| B. Tailwind 없이 CSS Modules 또는 vanilla CSS | 의존성 0. 충돌 가능성 낮음 | 기존 React 앱이 Tailwind 기반이라 재작성 비용이 큼 | utility class의 개발 속도 이점을 포기하게 된다 |
+| C. Tailwind preflight 유지 + iframe 격리 | 완전한 격리 | Obsidian View 안의 iframe은 ItemView API와 마찰 | event·keyboard handler가 부자연스러워진다 |
+| D. Tailwind + prefix 없이 그냥 사용 | 마크업이 깔끔 | `flex`·`block`·`hidden`은 모든 CSS에 흔한 이름 | utility class 충돌 가능성이 매우 높다 |
 
 ## Consequences
 
-### Positive
+- **긍정적**: Obsidian 전역 CSS와 충돌하지 않는다. CSS variable 매핑 덕에 다크/라이트 테마 전환이 자동으로 반영된다. 기존 React 앱의 Tailwind 코드를 재사용할 수 있다.
+- **부정적**: 마크업이 약간 verbose하다(`tm-flex tm-gap-2`). preflight 없이는 일부 유틸리티가 의도와 다르게 동작할 수 있다(`button` 기본 background 등).
+- **리스크**: v4가 안정화되면 마이그레이션이 필요하다. 완화 — `tm-` prefix는 IDE auto-complete로 충분히 빠르게 입력하고, preflight이 필요한 element는 명시적으로 reset class(`tm-bg-transparent tm-border-0`)를 적용한다. v4 마이그레이션은 별도 ADR로 검토한다(Phase 4 이후 후보).
+- **검증**: Obsidian sample vault에 plugin 설치 후 기본 setting tab과 file explorer 스타일이 변하지 않는지 확인. 다크 → 라이트 테마 전환 시 보드 색상이 함께 변하는지 확인. 다른 인기 plugin(Calendar, Tasks)을 함께 활성화한 환경에서 충돌 없는지 수동 QA.
 
-- Obsidian 전역 CSS와 충돌하지 않음.
-- 다크/라이트 테마 전환이 자동으로 반영됨 (CSS variable 매핑 덕).
-- 기존 React 앱의 Tailwind 코드 재사용 가능.
+## References
 
-### Negative
-
-- 마크업이 약간 verbose (`tm-flex tm-gap-2`).
-- preflight 없이는 일부 유틸리티가 의도와 다르게 동작 가능 (`button` 기본 background 등).
-- v4가 안정화될 때 마이그레이션 필요.
-
-### Mitigation
-
-- `tm-` prefix는 IDE auto-complete로 충분히 빠르게 입력 가능.
-- preflight이 필요한 element는 명시적으로 reset class 적용 (`tm-bg-transparent tm-border-0`).
-- v4 마이그레이션은 별도 ADR로 검토 (Phase 4 이후 후보).
-
-## Validation
-
-- Obsidian sample vault에 plugin 설치 후, 기본 setting tab과 file explorer 스타일이 변하지 않는지 확인.
-- 다크 → 라이트 테마 전환 시 보드 색상이 함께 변하는지 확인.
-- 다른 인기 plugin(예: Calendar, Tasks)을 함께 활성화한 환경에서 충돌 없는지 수동 QA.
+- 관련 문서: PRD §8.6, §13.4, PLAN §2, §8
