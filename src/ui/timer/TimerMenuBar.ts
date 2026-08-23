@@ -213,6 +213,8 @@ export function mountTimerMenuBar(
 interface NativeImageLike {
   addRepresentation(rep: { scaleFactor: number; dataURL: string }): void;
   setTemplateImage(flag: boolean): void;
+  isEmpty?(): boolean;
+  getSize?(): { width: number; height: number };
 }
 
 interface ElectronTrayLike {
@@ -283,6 +285,20 @@ export function createElectronTrayPort(): TrayPort {
       } catch (err) {
         console.error("[TaskMaster] tray create failed", err);
         return null;
+      }
+      // 메뉴바 항목은 창 밖에서 살아 콘솔에 아무 흔적을 안 남긴다. 실제 배치를 남겨야
+      // "화면 밖으로 밀렸다"와 "폭 0으로 그려졌다"를 사후에 구분할 수 있다.
+      debugLog(`tray bounds: ${JSON.stringify(tray.getBounds?.() ?? null)}`);
+      // 생성 직후 값은 레이아웃 전일 수 있다. 자리를 실제로 못 받은 것과 구분하려면
+      // 잠시 뒤 다시 재야 한다 — 이 항목은 창 밖에 살아 다른 관측 수단이 없다.
+      for (const delay of [2000, 8000]) {
+        window.setTimeout(() => {
+          try {
+            debugLog(`tray bounds +${delay}ms: ${JSON.stringify(tray.getBounds?.() ?? null)}`);
+          } catch (err) {
+            debugLog(`tray bounds +${delay}ms failed: ${String(err)}`);
+          }
+        }, delay);
       }
       const owner = `taskmaster-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       if (sharedRegistry) {
@@ -413,8 +429,11 @@ function createTrayImage(remote: ElectronRemoteLike): NativeImageLike {
       dataURL: taskmasterMenuBarIcon2x || TASKMASTER_ICON_2X,
     });
     image.setTemplateImage(false);
-  } catch {
-    // nativeImage representation 미지원 환경 — 타이틀 텍스트만으로 동작
+  } catch (err) {
+    // 아이콘이 비면 타이틀 텍스트도 없어 폭 0짜리 투명 항목이 된다 — 조용히 삼키지 않는다.
+    debugLog(`tray image representation failed: ${String(err)}`);
   }
+  debugLog(`tray image: empty=${String(image.isEmpty?.() ?? "n/a")} size=${
+    JSON.stringify(image.getSize?.() ?? null)}`);
   return image;
 }
