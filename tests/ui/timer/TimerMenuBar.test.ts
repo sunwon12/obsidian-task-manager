@@ -31,6 +31,10 @@ import type {
   FloatingDisplay,
   TimerFloatingController,
 } from "../../../src/ui/timer/TimerFloatingWindow";
+import type {
+  MenuBarAnchorRect,
+  TaskMenuPopoverController,
+} from "../../../src/ui/timer/TaskMenuPopover";
 
 beforeEach(() => {
   vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -41,10 +45,13 @@ class FakeTray implements TrayHandle {
   tooltip = "";
   items: TrayMenuItem[] = [];
   destroyed = false;
+  clickHandler: (() => void) | null = null;
 
   setTitle(v: string): void { this.title = v; }
   setToolTip(v: string): void { this.tooltip = v; }
   setContextMenu(items: TrayMenuItem[]): void { this.items = items; }
+  setClickHandler(listener: () => void): void { this.clickHandler = listener; }
+  getBounds(): MenuBarAnchorRect { return { x: 400, y: 0, width: 24, height: 24 }; }
   destroy(): void { this.destroyed = true; }
 }
 
@@ -74,6 +81,26 @@ class FakeFloatingController implements TimerFloatingController {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
+}
+
+class FakePopoverController implements TaskMenuPopoverController {
+  open = false;
+  anchor: MenuBarAnchorRect | null = null;
+  toggleCount = 0;
+  isSupported(): boolean { return true; }
+  isOpen(): boolean { return this.open; }
+  show(anchor: MenuBarAnchorRect | null): boolean {
+    this.anchor = anchor;
+    this.open = anchor != null;
+    return this.open;
+  }
+  toggle(anchor: MenuBarAnchorRect | null): boolean {
+    this.anchor = anchor;
+    this.open = !this.open;
+    this.toggleCount += 1;
+    return this.open;
+  }
+  close(): void { this.open = false; }
 }
 
 /**
@@ -127,20 +154,13 @@ async function flushAsync(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-describe("menuBarTitle — 메뉴바 타이틀 규칙", () => {
-  it("타이머 없으면 빈 문자열(아이콘만), phase별 심볼 + 경과, 여러 개면 +n", () => {
+describe("menuBarTitle — 메뉴바는 랏코 아이콘만 표시", () => {
+  it("타이머 개수와 phase에 관계없이 상태 문자열을 붙이지 않는다", () => {
     expect(menuBarTitle([])).toBe("");
-    expect(menuBarTitle([snap({ phase: "idle" })])).toBe("⏱ 00:00");
-    expect(menuBarTitle([snap({ phase: "running", elapsedMs: 153_000 })])).toBe("▶ 02:33");
-    expect(menuBarTitle([snap({ phase: "paused", elapsedMs: 250_000 })])).toBe("⏸ 04:10");
-    // running이 있으면 idle보다 우선, 나머지 개수는 +n
-    expect(
-      menuBarTitle([
-        snap({ phase: "idle" }),
-        snap({ phase: "running", elapsedMs: 61_000 }),
-        snap({ phase: "paused", elapsedMs: 10_000 }),
-      ]),
-    ).toBe("▶ 01:01 +2");
+    expect(menuBarTitle([snap({ phase: "idle" })])).toBe("");
+    expect(menuBarTitle([snap({ phase: "running", elapsedMs: 153_000 })])).toBe("");
+    expect(menuBarTitle([snap({ phase: "paused", elapsedMs: 250_000 })])).toBe("");
+    expect(menuBarTitle([snap({}), snap({}), snap({})])).toBe("");
   });
 });
 
@@ -153,11 +173,11 @@ describe("TimerMenuBar — 메뉴바 표시 (배너와 병행)", () => {
     expect(s.tray.items[0]?.enabled).toBe(false);
   });
 
-  it("[M2] DOING 진입 시 메뉴바에 '⏱ 00:00'과 타이머 메뉴 항목이 뜬다", async () => {
+  it("[M2] DOING 진입 후에도 메뉴바는 아이콘만이고 우클릭 메뉴에는 타이머가 뜬다", async () => {
     const s = await setup();
     await s.taskService.createTask({ title: "메뉴바로 보기", status: "doing" });
 
-    expect(s.tray.title).toBe("⏱ 00:00");
+    expect(s.tray.title).toBe("");
     expect(s.tray.items).toHaveLength(1);
     expect(s.tray.items[0]?.label).toContain("메뉴바로 보기");
     expect(s.tray.items[0]?.label).toContain("00:00");
@@ -172,7 +192,7 @@ describe("TimerMenuBar — 메뉴바 표시 (배너와 병행)", () => {
 
       vi.advanceTimersByTime(3_000);
 
-      expect(s.tray.title).toBe("▶ 00:03");
+      expect(s.tray.title).toBe("");
     } finally {
       vi.useRealTimers();
     }
@@ -185,7 +205,7 @@ describe("TimerMenuBar — 메뉴바 표시 (배너와 병행)", () => {
     s.tick(5_000);
     s.timers.pause(task.id);
 
-    expect(s.tray.title).toBe("⏸ 00:05");
+    expect(s.tray.title).toBe("");
   });
 
   it("[M5] 메뉴의 스탑을 누르면 태스크가 DONE이 되고 메뉴바에서 사라진다", async () => {
@@ -210,7 +230,7 @@ describe("TimerMenuBar — 메뉴바 표시 (배너와 병행)", () => {
     s.timers.dismiss(task.id);
 
     // 배너는 숨었지만 메뉴바에는 계속 표시
-    expect(s.tray.title).toBe("⏱ 00:00");
+    expect(s.tray.title).toBe("");
     const restoreItem = s.tray.items[0]?.submenu?.find((i) => /banner|배너/i.test(i.label));
     expect(restoreItem).toBeTruthy();
 
@@ -279,6 +299,26 @@ describe("TimerMenuBar — 메뉴바 표시 (배너와 병행)", () => {
     expect(withoutDisplays.some((i) => i.submenu != null)).toBe(false);
   });
 
+  it("[M12] 메뉴바 아이콘 좌클릭은 빠른 작업 팝오버를 열고 재클릭하면 닫는다", async () => {
+    const g = buildGraph(true);
+    await g.timers.init();
+    const tray = new FakeTray();
+    const popover = new FakePopoverController();
+    const bar = new TimerMenuBar(g.timers, fakePort(tray), undefined, popover);
+    bar.mount();
+
+    tray.clickHandler?.();
+    expect(popover.open).toBe(true);
+    expect(popover.anchor).toEqual({ x: 400, y: 0, width: 24, height: 24 });
+
+    tray.clickHandler?.();
+    expect(popover.open).toBe(false);
+
+    tray.clickHandler?.();
+    expect(popover.open).toBe(true);
+    expect(popover.toggleCount).toBe(3);
+  });
+
   it("[M12] 모니터가 둘 이상이면 라디오 서브메뉴로 고를 수 있고 선택이 controller에 전달된다", () => {
     const floating = new FakeFloatingController();
     floating.displays = [
@@ -325,6 +365,8 @@ describe("TimerMenuBar — 메뉴바 표시 (배너와 병행)", () => {
 
   it("[M10] hot reload로 tray를 다시 만들면 이전 전역 인스턴스를 제거한다", () => {
     const created: Array<{ destroyed: boolean }> = [];
+    const representations: Array<{ scaleFactor: number; dataURL: string }> = [];
+    const templateFlags: boolean[] = [];
     class FakeElectronTray {
       destroyed = false;
       constructor(_image: unknown) { created.push(this); }
@@ -333,27 +375,39 @@ describe("TimerMenuBar — 메뉴바 표시 (배너와 병행)", () => {
       setContextMenu(): void {}
       destroy(): void { this.destroyed = true; }
     }
+    const mainGlobal: Record<string, unknown> = {};
     const remote = {
       Tray: FakeElectronTray,
       Menu: { buildFromTemplate: (items: unknown[]) => items },
       nativeImage: {
-        createEmpty: () => ({ addRepresentation: () => {}, setTemplateImage: () => {} }),
+        createEmpty: () => ({
+          addRepresentation: (representation: { scaleFactor: number; dataURL: string }) => {
+            representations.push(representation);
+          },
+          setTemplateImage: (flag: boolean) => { templateFlags.push(flag); },
+        }),
       },
+      getGlobal: () => mainGlobal,
     };
     const target = window as Window & { require?: (id: string) => unknown };
     const originalRequire = target.require;
     target.require = () => remote;
-    const canvas = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     try {
       const first = createElectronTrayPort().create();
+      // renderer 전역을 잃어버린 새 창/새 renderer에서도 main-process registry로
+      // 기존 native Tray를 찾아 제거해야 한다.
+      delete (window as Window & { __taskmasterTimerTray?: TrayHandle }).__taskmasterTimerTray;
       const second = createElectronTrayPort().create();
       expect(created).toHaveLength(2);
       expect(created[0]?.destroyed).toBe(true);
       expect(created[1]?.destroyed).toBe(false);
+      expect(representations.map((item) => item.scaleFactor)).toEqual([1, 2, 1, 2]);
+      // Vite test 환경은 asset URL, production esbuild는 data URL로 전달한다.
+      expect(representations.every((item) => item.dataURL.length > 0)).toBe(true);
+      expect(templateFlags).toEqual([false, false]);
       second?.destroy();
       first?.destroy();
     } finally {
-      canvas.mockRestore();
       if (originalRequire) target.require = originalRequire;
       else delete target.require;
     }

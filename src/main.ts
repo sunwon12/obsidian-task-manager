@@ -8,12 +8,16 @@
 
 import { Notice, Plugin } from "obsidian";
 import { TaskMasterView, VIEW_TYPE_TASKMASTER } from "./view/TaskMasterView";
-import { mountTimerOverlay } from "./ui/timer/TimerNotificationStack";
 import { mountTimerMenuBar } from "./ui/timer/TimerMenuBar";
 import {
   createElectronFloatingWindowPort,
   TimerFloatingWindow,
 } from "./ui/timer/TimerFloatingWindow";
+import {
+  createElectronTaskMenuPopoverPort,
+  registerQuickPanelShortcut,
+  TaskMenuPopover,
+} from "./ui/timer/TaskMenuPopover";
 import { DiagnosticsLog } from "./core/diagnostics";
 import { EventBus } from "./core/eventBus";
 import { initI18n } from "./i18n";
@@ -27,6 +31,8 @@ import {
   TaskTimerService, type PersistedTimer, type TimerPersistencePort,
 } from "./services";
 import { IndexService } from "./integration/IndexService";
+import { AiReportService } from "./services/AiReportService";
+import { createNodeAiReportRunner } from "./integration/aiReportRunner";
 import { createTaskMasterStore, type TaskMasterStore } from "./store/taskMasterStore";
 import type { PluginSettings } from "./core/types";
 
@@ -42,6 +48,7 @@ export interface ServiceContainer {
   projectMemoService: ProjectMemoService;
   meetingService: MeetingService;
   jiraSyncService?: JiraSyncService;
+  aiReportService?: AiReportService;
   events: EventBus;
   diagnostics: DiagnosticsLog;
   settings: PluginSettings;
@@ -49,16 +56,20 @@ export interface ServiceContainer {
 }
 
 export default class TaskMasterPlugin extends Plugin {
+  private unloaded = false;
   private container: ServiceContainer | null = null;
   private taskRepo: TaskRepository | null = null;
   private boardRepo: BoardRepository | null = null;
   private meetingRepo: MeetingRepository | null = null;
   private timerService: TaskTimerService | null = null;
-  private timerOverlayDispose: (() => void) | null = null;
   private timerMenuBarDispose: (() => void) | null = null;
+  private quickPanelShortcutDispose: (() => void) | null = null;
+  private aiReportService: AiReportService | null = null;
   private timerFloatingWindow: TimerFloatingWindow | null = null;
+  private taskMenuPopover: TaskMenuPopover | null = null;
 
   override async onload(): Promise<void> {
+    this.unloaded = false;
     const settingsRepo = new SettingsRepository(this);
     const settings = await settingsRepo.load();
     initI18n(settings.locale);
@@ -91,6 +102,30 @@ export default class TaskMasterPlugin extends Plugin {
     const meetingService = new MeetingService(meetingRepo, store);
     const jiraSyncService = new JiraSyncService(new JiraRepository(), taskService, diagnostics);
 
+    // AI 리포트: `claude -p "<스킬>"` 를 헤드리스로 돌리고 스킬이 vault에 남긴 Markdown을 읽는다.
+    // launchd 잡은 ~/Desktop 아래 스크립트를 TCC 때문에 실행하지 못해 조용히 죽었다.
+    // Obsidian 안에서 돌리면 vault 권한을 그대로 쓰고, 실패가 패널에 그대로 보인다.
+    const aiReportService = new AiReportService(
+      createNodeAiReportRunner(),
+      {
+        read: async () => {
+          const path = settings.aiReportPath.trim();
+          if (!path) return null;
+          if (!(await this.app.vault.adapter.exists(path))) return null;
+          return this.app.vault.adapter.read(path);
+        },
+      },
+      () => ({
+        enabled: settings.aiReportEnabled,
+        binary: settings.aiReportBinary.trim() || "claude",
+        prompt: settings.aiReportPrompt.trim(),
+        cwd: this.vaultBasePath(),
+        timeoutMs: Math.max(1, settings.aiReportTimeoutMinutes) * 60_000,
+        scheduleAt: settings.aiReportScheduleAt.trim(),
+      }),
+    );
+    this.aiReportService = aiReportService;
+
     // T-901: DOING 타이머. 상태는 vault의 .timers.json에 저장해 재시작 후 복원한다.
     const timerService = new TaskTimerService(
       events, store, taskService,
@@ -120,6 +155,7 @@ export default class TaskMasterPlugin extends Plugin {
 
     this.container = {
       store, taskService, boardService, projectService, projectMemoService, meetingService, jiraSyncService,
+      aiReportService,
       events, diagnostics, settings,
       saveSettings: async (next) => {
         Object.assign(settings, next);
@@ -149,6 +185,21 @@ export default class TaskMasterPlugin extends Plugin {
       callback: () => void this.activateView(),
     });
     this.addCommand({
+      id: "open-taskmaster-quick-panel",
+      name: "Open TaskMaster quick panel",
+      callback: () => this.taskMenuPopover?.openDefault(),
+    });
+    this.addCommand({
+      id: "run-ai-report",
+      name: "Run AI report now",
+      callback: () => {
+        new Notice("AI report started");
+        void aiReportService.runNow().then((ok) => {
+          new Notice(ok ? "AI report ready" : `AI report failed: ${aiReportService.getState().error ?? ""}`);
+        });
+      },
+    });
+    this.addCommand({
       id: "sync-jira-issues",
       name: "Sync Jira issues",
       callback: () => void this.syncJira(jiraSyncService, settings),
@@ -162,9 +213,11 @@ export default class TaskMasterPlugin extends Plugin {
     // 돌면 안 된다 — 반드시 bootstrap 완료 뒤 순서를 보장한다.
     this.app.workspace.onLayoutReady(() => {
       void (async () => {
+        if (this.unloaded) return;
         try {
-          await indexService.bootstrap();
+          await indexService.bootstrap(() => !this.unloaded);
         } catch (err) {
+          if (this.unloaded) return;
           const message = err instanceof Error ? err.message : String(err);
           diagnostics.record({
             kind: "boot",
@@ -174,17 +227,39 @@ export default class TaskMasterPlugin extends Plugin {
           console.error("TaskMaster bootstrap failed", err);
           new Notice(`TaskMaster boot failed: ${message}`);
         }
+        if (this.unloaded) return;
 
         // T-901: bootstrap으로 store가 채워진 뒤에 타이머 복원 + 오버레이 mount.
         try {
           await timerService.init();
+          if (this.unloaded) {
+            timerService.dispose();
+            return;
+          }
           this.timerFloatingWindow = new TimerFloatingWindow(
             timerService,
             createElectronFloatingWindowPort(),
           );
-          this.timerOverlayDispose = mountTimerOverlay(timerService, this.timerFloatingWindow);
-          // 배너와 병행하는 맥 메뉴바 표시. 미지원 환경이면 null (배너만 동작).
-          this.timerMenuBarDispose = mountTimerMenuBar(timerService, this.timerFloatingWindow);
+          this.taskMenuPopover = new TaskMenuPopover(
+            timerService,
+            taskService,
+            store,
+            createElectronTaskMenuPopoverPort(),
+            () => void this.activateView(),
+            () => new Date(),
+            undefined,
+            aiReportService,
+            () => void this.openAiReportFile(settings.aiReportPath),
+          );
+          // 기본 타이머 UI는 macOS 메뉴바 패널 하나로 제한한다.
+          // Obsidian 창 위 자동 배너은 내용을 가리고 메뉴바와 역할이 겹쳐 마운트하지 않는다.
+          // 메뉴바가 꽉 차 아이콘이 화면 밖에 배치돼도 패널을 열 수 있는 진입점.
+          this.quickPanelShortcutDispose = registerQuickPanelShortcut(this.taskMenuPopover);
+          this.timerMenuBarDispose = mountTimerMenuBar(
+            timerService,
+            this.timerFloatingWindow,
+            this.taskMenuPopover,
+          );
         } catch (err) {
           diagnostics.record({
             kind: "boot",
@@ -202,9 +277,25 @@ export default class TaskMasterPlugin extends Plugin {
           }
         }
 
+        // 리포트는 파일이 정본이다. 먼저 읽어 두고, 예정 시각이 지났는데 오늘 것이
+        // 없으면 하루 한 번만 실행한다. 5분 간격으로 재확인해 맥이 자다 깬 날도 따라잡는다.
+        void aiReportService.refresh().then(() => aiReportService.runScheduledIfDue());
+        const reportInterval = window.setInterval(() => {
+          void aiReportService.runScheduledIfDue();
+        }, 5 * 60_000);
+        if (typeof this.registerInterval === "function") this.registerInterval(reportInterval);
+
         void this.archiveCompletedSprint(taskService, settings, settingsRepo);
         const interval = window.setInterval(() => {
-          void this.archiveCompletedSprint(taskService, settings, settingsRepo);
+          // 리포트는 파일이 정본이다. 먼저 읽어 두고, 예정 시각이 지났는데 오늘 것이
+        // 없으면 하루 한 번만 실행한다. 5분 간격으로 재확인해 맥이 자다 깬 날도 따라잡는다.
+        void aiReportService.refresh().then(() => aiReportService.runScheduledIfDue());
+        const reportInterval = window.setInterval(() => {
+          void aiReportService.runScheduledIfDue();
+        }, 5 * 60_000);
+        if (typeof this.registerInterval === "function") this.registerInterval(reportInterval);
+
+        void this.archiveCompletedSprint(taskService, settings, settingsRepo);
         }, 60 * 60_000);
         if (typeof this.registerInterval === "function") this.registerInterval(interval);
       })();
@@ -217,23 +308,57 @@ export default class TaskMasterPlugin extends Plugin {
    * 여기서는 reorder debounce 잔여만 fire-and-forget으로 flush한다.
    */
   override onunload(): void {
+    // onLayoutReady 안의 비동기 bootstrap/init이 뒤늦게 재개되어도
+    // 이 인스턴스가 Tray·오버레이를 다시 만들지 못하게 먼저 차단한다.
+    this.unloaded = true;
     const timerService = this.timerService;
     // plugin reload/disable에서도 UI teardown보다 타이머 checkpoint를 먼저 시작한다.
     void timerService?.flushForShutdown().catch((err: unknown) => {
       console.error("[TaskMaster] timer shutdown checkpoint failed", err);
     });
-    this.timerFloatingWindow?.dispose();
-    this.timerFloatingWindow = null;
-    this.timerMenuBarDispose?.();
+    // 네이티브 Tray를 먼저 정리한다. 다른 Electron UI 정리가 던져도
+    // 메뉴바 아이콘이 고아로 남지 않도록 각 정리를 독립 실행한다.
+    this.disposeSafely("menu bar", this.timerMenuBarDispose);
     this.timerMenuBarDispose = null;
-    this.timerOverlayDispose?.();
-    this.timerOverlayDispose = null;
+    this.disposeSafely("floating window", () => this.timerFloatingWindow?.dispose());
+    this.timerFloatingWindow = null;
+    this.disposeSafely("quick panel shortcut", () => this.quickPanelShortcutDispose?.());
+    this.quickPanelShortcutDispose = null;
+    this.disposeSafely("quick panel", () => this.taskMenuPopover?.dispose());
+    this.taskMenuPopover = null;
+    this.aiReportService = null;
     timerService?.dispose();
     this.timerService = null;
     void this.taskRepo?.flush();
     void this.boardRepo?.flush();
     void this.meetingRepo?.flush();
     this.app.workspace.detachLeavesOfType(VIEW_TYPE_TASKMASTER);
+  }
+
+  /** claude를 실행할 작업 디렉터리 = vault 루트. 스킬이 상대 경로로 파일을 찾는다. */
+  private vaultBasePath(): string {
+    const adapter = this.app.vault.adapter as { getBasePath?: () => string };
+    return typeof adapter.getBasePath === "function" ? adapter.getBasePath() : "";
+  }
+
+  /** 패널의 "전체 리포트 열기" — 스킬이 쓴 Markdown을 Obsidian에서 연다. */
+  private async openAiReportFile(path: string): Promise<void> {
+    const target = path.trim();
+    if (!target) return;
+    try {
+      await this.app.workspace.openLinkText(target, "", false);
+    } catch (err) {
+      console.error("[TaskMaster] open AI report failed", err);
+    }
+  }
+
+  private disposeSafely(label: string, dispose: (() => void) | null): void {
+    if (!dispose) return;
+    try {
+      dispose();
+    } catch (err) {
+      console.error(`[TaskMaster] ${label} cleanup failed`, err);
+    }
   }
 
   /** T-901: .timers.json 어댑터. 없으면 빈 상태, 파손이면 무시하고 새로 시작한다. */

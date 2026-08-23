@@ -5,6 +5,148 @@ All notable changes to TaskMaster Obsidian plugin will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-08-23
+
+### Added
+
+- The quick panel opens with an **AI report** section on top. TaskMaster runs a Claude Code skill
+  headlessly — `claude -p "/daily-schedule-feedback" --permission-mode acceptEdits` from the vault
+  root — and reads back the Markdown the skill writes, showing its newest section as a snapshot,
+  bullet feedback, and a highlight line. The card is collapsed by default (highlight only) so the
+  task list keeps the panel; expanding scrolls inside the card instead of pushing the tasks away.
+- `↻ 리포트 받기` runs the skill on demand and shows a live elapsed counter while the process is
+  alive; failures land in the card as a one-line reason (missing binary, timeout, non-zero exit)
+  instead of disappearing silently. `전체 리포트 열기` opens the source Markdown in Obsidian.
+- The report is scheduled inside the plugin: once a day, after the configured time, when the file
+  has no section for today. The launchd job that used to do this had been dead since 2026-08-09 —
+  it exits 127 because a LaunchAgent cannot read a script under `~/Desktop` without Full Disk
+  Access. Obsidian already holds the vault, so the schedule now lives where the permission is.
+- Settings (AI report): enable, skill prompt, report file path, `claude` executable, auto-run time
+  (`HH:MM`, empty = manual only), timeout in minutes, and a "run now" button. New command:
+  **Run AI report now**.
+
+### Fixed
+
+- Re-rendering the panel no longer scrolls the content: the step input's autofocus dragged the
+  scroll container down, which pushed the new report section out of view on every open. Focus is
+  now given with `preventScroll` and the scroll position is restored afterwards.
+
+## [0.9.5] - 2026-08-23
+
+### Added
+
+- A global shortcut, `Control+Option+Command+T`, opens and closes the quick panel from any app.
+  When the menu bar runs out of room, macOS parks a newly created status item off-screen, and the
+  otter becomes unclickable; the shortcut is an entry point that does not depend on the icon.
+
+### Changed
+
+- Truncated titles in the quick panel — the focused task, its steps, and every next-up row — now
+  scroll horizontally while the pointer rests on them, so a long title can be read to its end
+  without opening the board. No scrollbar is drawn — the macOS overlay bar sat on top of the very
+  text being read. One-second timer redraws keep each title's horizontal position.
+
+### Fixed
+
+- The quick panel now opens as a macOS non-activating panel (`NSPanel`), so clicking the otter no
+  longer brings Obsidian to the front. A regular window activates its app the moment it becomes
+  key, which dragged the main window along; a panel takes keyboard input while the app stays
+  inactive. Electron builds that reject the panel type fall back to the previous window.
+- Each renderer reload used to leave its menu bar icon behind. The tray reference kept in the
+  main-process global does not survive a reload — a fresh renderer reads it back as empty — so
+  every reload added an icon and the visible one was a corpse whose click handler was gone. The
+  renderer now destroys its own tray on `beforeunload`/`pagehide`, before it dies.
+- A status item parked off-screen reported an anchor far to the left of the display, which pinned
+  the panel to the screen's left corner. Anchors outside the work area now fall back to the
+  top-right default position.
+- Popover and tray lifecycle events are appended to `/tmp/taskmaster-popover.log`. The panel lives
+  outside the Obsidian window, so without it a failure leaves no trace unless devtools happen to
+  be open.
+- Clicking the otter to close its quick panel no longer pulls the Obsidian window to the front.
+  When the panel was opened while Obsidian was in the background, closing it hides the app again
+  and returns focus to whatever the user was working in.
+
+## [0.9.4] - 2026-08-23
+
+### Changed
+
+- The transparent otter artwork now fills a 22-point macOS status item, with a tightly cropped
+  44-pixel Retina representation instead of the previous 16/32-pixel pair.
+
+### Fixed
+
+- Clicking the otter while its quick panel is open now closes the panel. Blur dismissal waits
+  briefly for the macOS `blur → Tray click` event order, so the same click cannot close and then
+  immediately reopen the panel.
+
+## [0.9.3] - 2026-08-22
+
+### Changed
+
+- The macOS status item now shows only the user's TaskMaster otter artwork, extracted onto a
+  transparent background and tightly framed in native 1x/2x menu-bar sizes. Timer glyphs,
+  elapsed text, and task counts no longer sit beside the artwork; those details live inside the
+  click-opened panel.
+
+### Fixed
+
+- Tray ownership now lives in Electron's shared main-process registry, not only the current
+  Obsidian renderer window. A new vault window or renderer replaces the previous native Tray and
+  its stale click handler, keeping one clickable TaskMaster status item after future reloads.
+- The quick panel now gives its app root a fixed height so the central content becomes a real
+  scroll container. One-second timer redraws preserve that container's scroll position instead of
+  snapping it back to the top.
+
+## [0.9.2] - 2026-08-22
+
+### Fixed
+
+- macOS could return focus to Obsidian as the original status-item or command-palette click
+  completed, immediately firing the new popover's blur-to-close path. The panel now lets that
+  opening event settle and reacquires focus before enabling normal outside-click dismissal.
+- Clicking the menu-bar status item while the previous popover's asynchronous close event was
+  still in flight could also make the click appear to do nothing. Every status-item click now
+  starts a fresh popover session, and a stale window can no longer tear down the replacement.
+- Startup read task Markdown files sequentially, so the empty board remained visible while every
+  cached-read delay accumulated. Independent task files are now read concurrently while preserving
+  their stable result order and per-file error isolation.
+
+## [0.9.1] - 2026-08-22
+
+### Fixed
+
+- Reloading Obsidian while TaskMaster's asynchronous vault bootstrap was still running could let
+  the unloaded plugin instance resume afterward and create another menu-bar timer, quick panel,
+  and overlay. Startup now carries an unload cancellation guard through indexing and timer restore.
+- Native UI cleanup is isolated and the menu-bar Tray is destroyed first, so a failure while
+  closing another Electron window cannot strand an additional status item.
+
+### Changed
+
+- TaskMaster no longer mounts the automatic timer banner over the Obsidian window. The macOS
+  menu-bar quick panel is now the single default timer surface; the explicit right-click desktop
+  pin remains available when an always-on-top window is wanted.
+
+## [0.9.0] - 2026-08-22
+
+### Added
+
+- Clicking the macOS menu-bar icon now opens a purpose-built dark popover instead of the plain
+  native text menu. It puts active timers, work-plan progress, upcoming tasks, today's completion
+  count, and the full-board shortcut in one compact view attached to the status item.
+- A work-plan step can be appended to any active task directly in that popover. The field keeps its
+  focus and draft while one-second timer refreshes redraw the panel, then saves through the existing
+  TaskService path to the task Markdown file.
+- The popover can quick-create a TODO task or move an upcoming task into DOING and start its timer,
+  without bringing Obsidian to the foreground.
+- `Open TaskMaster quick panel` provides the same panel from Obsidian's command palette when the
+  macOS status item is hidden or keyboard access is more convenient.
+
+### Changed
+
+- The previous native timer and display menu remains available on right-click as a fallback and for
+  display-pin controls. Left-click is reserved for the quick panel.
+
 ## [0.8.2] - 2026-08-18
 
 ### Fixed

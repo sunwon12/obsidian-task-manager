@@ -39,6 +39,7 @@ const buildOptions = {
   sourcemap: isProd ? false : "inline",
   treeShaking: true,
   minify: isProd,
+  loader: { ".png": "dataurl" },
   outfile: "dist/main.js",
   jsx: "automatic",
 };

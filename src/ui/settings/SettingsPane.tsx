@@ -13,6 +13,8 @@ export const SettingsPane: React.FC = () => {
   const [settings, setSettings] = React.useState<PluginSettings>(services.settings);
   const [syncing, setSyncing] = React.useState(false);
   const [syncMessage, setSyncMessage] = React.useState<string | null>(null);
+  const [reportRunning, setReportRunning] = React.useState(false);
+  const [reportMessage, setReportMessage] = React.useState<string | null>(null);
 
   async function update(patch: Partial<PluginSettings>): Promise<void> {
     const next = { ...settings, ...patch };
@@ -121,6 +123,54 @@ export const SettingsPane: React.FC = () => {
               {syncing ? t("settings.jiraSync.syncing") : t("settings.jiraSync.button")}
             </button>
             {syncMessage && <span className="tm-text-sm tm-text-tm-muted">{syncMessage}</span>}
+          </div>
+        </div>
+      </div>
+
+      <div className="tm-border-t tm-border-tm-border tm-pt-5">
+        <h3 className="tm-text-base tm-font-medium tm-mb-3">{t("settings.aiReport.title")}</h3>
+        <div className="tm-flex tm-flex-col tm-gap-4">
+          <Field title={t("settings.aiReportEnabled.title")} description={t("settings.aiReportEnabled.desc")}>
+            <label className="tm-inline-flex tm-items-center tm-gap-2">
+              <input type="checkbox" checked={settings.aiReportEnabled}
+                onChange={(e) => void update({ aiReportEnabled: e.target.checked })} />
+            </label>
+          </Field>
+          <Field title={t("settings.aiReportPrompt.title")} description={t("settings.aiReportPrompt.desc")}>
+            <input type="text" value={settings.aiReportPrompt}
+              onChange={(e) => void update({ aiReportPrompt: e.target.value })}
+              className="tm-w-80 tm-px-2 tm-py-1 tm-bg-tm-bg-alt tm-rounded tm-text-tm-text" />
+          </Field>
+          <Field title={t("settings.aiReportPath.title")} description={t("settings.aiReportPath.desc")}>
+            <input type="text" value={settings.aiReportPath}
+              onChange={(e) => void update({ aiReportPath: e.target.value })}
+              className="tm-w-[32rem] tm-px-2 tm-py-1 tm-bg-tm-bg-alt tm-rounded tm-text-tm-text" />
+          </Field>
+          <Field title={t("settings.aiReportBinary.title")} description={t("settings.aiReportBinary.desc")}>
+            <input type="text" value={settings.aiReportBinary}
+              onChange={(e) => void update({ aiReportBinary: e.target.value })}
+              className="tm-w-80 tm-px-2 tm-py-1 tm-bg-tm-bg-alt tm-rounded tm-text-tm-text" />
+          </Field>
+          <Field title={t("settings.aiReportSchedule.title")} description={t("settings.aiReportSchedule.desc")}>
+            <input type="text" value={settings.aiReportScheduleAt} placeholder="08:40"
+              onChange={(e) => void update({ aiReportScheduleAt: e.target.value.trim() })}
+              className="tm-w-24 tm-px-2 tm-py-1 tm-bg-tm-bg-alt tm-rounded tm-text-tm-text" />
+          </Field>
+          <Field title={t("settings.aiReportTimeout.title")} description={t("settings.aiReportTimeout.desc")}>
+            <input type="number" min={1} max={60} value={settings.aiReportTimeoutMinutes}
+              onChange={(e) => { const value = Number(e.target.value); if (Number.isInteger(value) && value >= 1 && value <= 60) void update({ aiReportTimeoutMinutes: value }); }}
+              className="tm-w-24 tm-px-2 tm-py-1 tm-bg-tm-bg-alt tm-rounded" />
+          </Field>
+          <div className="tm-flex tm-items-center tm-gap-3">
+            <button type="button" disabled={reportRunning || !services.aiReportService} onClick={() => {
+              setReportRunning(true); setReportMessage(null);
+              void services.aiReportService?.runNow().then((ok) => {
+                setReportMessage(ok ? new Date().toLocaleTimeString() : (services.aiReportService?.getState().error ?? "failed"));
+              }).finally(() => setReportRunning(false));
+            }} className="tm-px-3 tm-py-1.5 tm-text-sm tm-bg-tm-accent tm-text-white tm-rounded disabled:tm-opacity-50">
+              {reportRunning ? t("settings.aiReport.running") : t("settings.aiReport.run")}
+            </button>
+            {reportMessage && <span className="tm-text-sm tm-text-tm-muted">{reportMessage}</span>}
           </div>
         </div>
       </div>

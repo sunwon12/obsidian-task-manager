@@ -311,6 +311,18 @@ export interface PluginSettings {
   lastArchivedSprintEnd: string;
   /** UI 전용: 숨긴 kanban status 목록. task/board semantic data와 분리한다. */
   hiddenStatuses: ColumnId[];
+  /** 빠른 패널의 AI 리포트 섹션과 자동 실행을 켠다. */
+  aiReportEnabled: boolean;
+  /** claude 실행 파일. PATH에 있으면 이름만 둔다. */
+  aiReportBinary: string;
+  /** `claude -p` 에 넘길 프롬프트. 보통 슬래시 스킬 이름. */
+  aiReportPrompt: string;
+  /** 스킬이 리포트를 기록하는 vault 상대 경로. */
+  aiReportPath: string;
+  /** 자동 실행 시각 "HH:MM". 비우면 버튼으로만 실행한다. */
+  aiReportScheduleAt: string;
+  /** 한 번 실행에 허용하는 시간(분). */
+  aiReportTimeoutMinutes: number;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -334,4 +346,10 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   autoArchiveDoneAtSprintEnd: true,
   lastArchivedSprintEnd: "",
   hiddenStatuses: [],
+  aiReportEnabled: true,
+  aiReportBinary: "claude",
+  aiReportPrompt: "/daily-schedule-feedback",
+  aiReportPath: "02_일상/03_성찰/일일-일정-피드백.md",
+  aiReportScheduleAt: "08:40",
+  aiReportTimeoutMinutes: 10,
 };

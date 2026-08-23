@@ -36,20 +36,23 @@ export class IndexService {
     private readonly dataRoot: string,
   ) {}
 
-  async bootstrap(): Promise<void> {
+  async bootstrap(isActive: () => boolean = () => true): Promise<void> {
     await this.ensureFolders();
+    if (!isActive()) return;
 
     const [taskList, meetingList, projectList] = await Promise.all([
       this.tasks.findAll(),
       this.meetings.findAll(),
       this.projects.findAll(),
     ]);
+    if (!isActive()) return;
 
     this.store.getState().setTasks(taskList);
     this.store.getState().setMeetings(meetingList);
     this.store.getState().setProjects(projectList);
 
     const board = await this.boardRepo.loadOrRebuild(taskList);
+    if (!isActive()) return;
     this.boardService.replace(board);
 
     this.registerVaultListeners();

@@ -8,7 +8,7 @@ Keep personal tasks, project notes, meetings, and Jira issues in one calm Kanban
 
 [![Obsidian](https://img.shields.io/badge/Obsidian-1.5%2B-7c3aed?logo=obsidian&logoColor=white)](https://obsidian.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-16a34a.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-254%20passing-16a34a.svg)](#development)
+[![Tests](https://img.shields.io/badge/tests-385%20passing-16a34a.svg)](#development)
 
 </div>
 
@@ -36,7 +36,9 @@ Local Markdown tasks ──┘
 - **Jira sync** — import your assigned Jira issues with JQL; no duplicate manual cards.
 - **Tags that stay visible** — classify cards with tags such as `업무`, `학습`, or `업무외` and see them directly on the board.
 - **Measured work plan beside the timer** — add ordered steps, select or automate `currentStep`, and see each step's live elapsed time. Per-step seconds are saved back to task frontmatter for later analysis.
-- **Desktop pin** — use the pin icon in a task timer header to keep a compact always-on-top timer panel visible while working in another application (Obsidian desktop only).
+- **Menu-bar quick panel** — the macOS status bar shows one tightly filled 22-point TaskMaster otter icon with no timer text beside it. Click it to see active work and elapsed time, add the next step, create a task, or start a waiting task without opening Obsidian; click the otter again to close it. Its task area scrolls independently and keeps position across live timer updates. Opening it never activates Obsidian: the panel is a macOS non-activating panel, so it takes keyboard input while the app you were using stays in front. Press `Control+Option+Command+T` from any app to toggle it, or run `Open TaskMaster quick panel` from the command palette — both work when the menu bar is too crowded for macOS to place the icon on screen.
+- **AI report in the panel** — the top of the quick panel carries a daily report written by a Claude Code skill. TaskMaster runs it headlessly (`claude -p "/daily-schedule-feedback"` from the vault root), reads the Markdown the skill writes, and shows its newest section: a snapshot, bullet feedback, and one highlight. It runs once a day after the configured time when today's section is missing, and `↻ 리포트 받기` runs it on demand with a live elapsed counter. Skill prompt, report path, `claude` executable, schedule and timeout are all in settings; **Run AI report now** is in the command palette.
+- **Desktop pin** — use the menu-bar item's right-click menu when you explicitly want a compact always-on-top timer panel (Obsidian desktop only). TaskMaster does not cover the Obsidian window with an automatic timer banner.
 - **Markdown-native** — task cards, projects, meetings, and memos are ordinary files you can search, link, edit, and back up.
 - **Projects that hold context** — attach tasks, meeting notes, and quick memos to a project.
 - **Fast daily use** — drag-and-drop on desktop, focused mobile controls, keyboard shortcuts, search, priority and project filters.
