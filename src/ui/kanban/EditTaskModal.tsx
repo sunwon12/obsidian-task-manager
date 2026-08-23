@@ -2,6 +2,7 @@ import * as React from "react";
 import { useStore } from "../../app/providers/TaskMasterProvider";
 import { t } from "../../i18n";
 import { normalizePlanSteps, WorkPlanEditor } from "./WorkPlanEditor";
+import { AiDraftPanel, type DraftPatch } from "./AiDraftPanel";
 import type { Priority, ProjectId, Task } from "../../core/types";
 
 interface Props {
@@ -40,6 +41,18 @@ export const EditTaskModal: React.FC<Props> = ({ task, onClose, onSave }) => {
   const currentStepId = React.useId();
 
   const parsedSteps = React.useMemo(() => normalizePlanSteps(steps), [steps]);
+
+  // AI 초안은 폼 상태만 바꾼다 — 저장은 아래 저장 버튼이 그대로 담당한다.
+  const applyDraft = React.useCallback((patch: DraftPatch) => {
+    if (patch.priority !== undefined) setPriority(patch.priority);
+    if (patch.project !== undefined) setProject(patch.project);
+    if (patch.tags !== undefined) setTags(patch.tags);
+    if (patch.remarks !== undefined) setRemarks(patch.remarks);
+    if (patch.steps !== undefined) {
+      setSteps(patch.steps.length > 0 ? patch.steps : [""]);
+      setCurrentStep(1);
+    }
+  }, []);
 
   const sortedProjects = React.useMemo(
     () => [...projects.values()].sort((a, b) => a.title.localeCompare(b.title)),
@@ -194,6 +207,12 @@ export const EditTaskModal: React.FC<Props> = ({ task, onClose, onSave }) => {
           onChange={(e) => setTags(e.target.value)}
           placeholder={t("modal.task.tagsPlaceholder")}
           className="tm-w-full tm-px-3 tm-py-2 tm-bg-tm-bg-alt tm-border tm-border-tm-border tm-rounded tm-text-tm-text"
+        />
+
+        <AiDraftPanel
+          task={task}
+          values={{ priority, project, tags, remarks, steps }}
+          onApply={applyDraft}
         />
 
         <div className="tm-flex tm-justify-end tm-gap-2 tm-mt-4">

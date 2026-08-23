@@ -176,6 +176,28 @@ export const SettingsPane: React.FC = () => {
       </div>
 
       <div className="tm-border-t tm-border-tm-border tm-pt-5">
+        <h3 className="tm-text-base tm-font-medium tm-mb-3">{t("settings.aiDraft.title")}</h3>
+        <div className="tm-flex tm-flex-col tm-gap-4">
+          <Field title={t("settings.aiDraftEnabled.title")} description={t("settings.aiDraftEnabled.desc")}>
+            <label className="tm-inline-flex tm-items-center tm-gap-2">
+              <input type="checkbox" checked={settings.aiDraftEnabled}
+                onChange={(e) => void update({ aiDraftEnabled: e.target.checked })} />
+            </label>
+          </Field>
+          <Field title={t("settings.aiDraftModel.title")} description={t("settings.aiDraftModel.desc")}>
+            <input type="text" value={settings.aiDraftModel} placeholder="sonnet"
+              onChange={(e) => void update({ aiDraftModel: e.target.value.trim() })}
+              className="tm-w-40 tm-px-2 tm-py-1 tm-bg-tm-bg-alt tm-rounded tm-text-tm-text" />
+          </Field>
+          <Field title={t("settings.aiDraftTimeout.title")} description={t("settings.aiDraftTimeout.desc")}>
+            <input type="number" min={1} max={30} value={settings.aiDraftTimeoutMinutes}
+              onChange={(e) => { const value = Number(e.target.value); if (Number.isInteger(value) && value >= 1 && value <= 30) void update({ aiDraftTimeoutMinutes: value }); }}
+              className="tm-w-24 tm-px-2 tm-py-1 tm-bg-tm-bg-alt tm-rounded" />
+          </Field>
+        </div>
+      </div>
+
+      <div className="tm-border-t tm-border-tm-border tm-pt-5">
         <h3 className="tm-text-base tm-font-medium tm-mb-3">{t("settings.sprint.title")}</h3>
         <div className="tm-flex tm-flex-col tm-gap-4">
           <Field title={t("settings.sprintStart.title")} description={t("settings.sprintStart.desc")}>

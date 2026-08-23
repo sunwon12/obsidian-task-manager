@@ -13,6 +13,7 @@ import {
   type TaskMenuPopoverHandle,
   type TaskMenuPopoverPort,
   type AiReportPanelState,
+  type AiDraftPanelState,
 } from "../../../src/ui/timer/TaskMenuPopover";
 import { parseAiReport } from "../../../src/core/aiReport";
 import type { AiReportController, AiReportState } from "../../../src/services/AiReportService";
@@ -550,5 +551,73 @@ describe("TaskMenuPopover — AI 리포트 섹션", () => {
     expect(parseTaskMenuPopoverAction("taskmaster-menu://run-report")).toEqual({ kind: "run-report" });
     expect(parseTaskMenuPopoverAction("taskmaster-menu://toggle-report")).toEqual({ kind: "toggle-report" });
     expect(parseTaskMenuPopoverAction("taskmaster-menu://open-report")).toEqual({ kind: "open-report" });
+  });
+});
+
+describe("TaskMenuPopover — AI 단계 초안", () => {
+  const draftState = (overrides: Partial<AiDraftPanelState> = {}): AiDraftPanelState => ({
+    running: false,
+    error: null,
+    runningSeconds: 0,
+    ...overrides,
+  });
+
+  it("단계가 비어 있는 집중 작업 하나에만 초안 진입점을 건다", async () => {
+    const graph = buildGraph();
+    await graph.timers.init();
+    const focus = await graph.taskService.createTask({ title: "오피셜 체크", status: "doing" });
+
+    const content = renderTaskMenuPopover(
+      graph.timers.getTimers(), [], new Date("2026-08-22T12:00:00+09:00"), null, draftState(),
+    );
+
+    expect(content.html).toContain("AI로 단계 세우기");
+    expect(content.html).toContain(`taskmaster-menu://draft-steps?taskId=${focus.id}`);
+  });
+
+  it("이미 단계가 있으면 좁은 패널에서 덮어쓸 경로 자체를 만들지 않는다", async () => {
+    const graph = buildGraph();
+    await graph.timers.init();
+    await graph.taskService.createTask({ title: "오피셜 체크", status: "doing", steps: ["[실작업] 구현"] });
+
+    const content = renderTaskMenuPopover(
+      graph.timers.getTimers(), [], new Date("2026-08-22T12:00:00+09:00"), null, draftState(),
+    );
+
+    expect(content.html).not.toContain("draft-steps");
+  });
+
+  it("초안 서비스가 없으면 진입점도 없다", async () => {
+    const graph = buildGraph();
+    await graph.timers.init();
+    await graph.taskService.createTask({ title: "오피셜 체크", status: "doing" });
+
+    const content = renderTaskMenuPopover(
+      graph.timers.getTimers(), [], new Date("2026-08-22T12:00:00+09:00"), null, null,
+    );
+
+    expect(content.html).not.toContain("draft-steps");
+  });
+
+  it("생성 중과 실패를 같은 자리에 남긴다", async () => {
+    const graph = buildGraph();
+    await graph.timers.init();
+    await graph.taskService.createTask({ title: "오피셜 체크", status: "doing" });
+    const timers = graph.timers.getTimers();
+    const now = new Date("2026-08-22T12:00:00+09:00");
+
+    const running = renderTaskMenuPopover(timers, [], now, null, draftState({ running: true, runningSeconds: 42 }));
+    expect(running.html).toContain("42");
+    expect(running.html).not.toContain("draft-steps");
+
+    const failed = renderTaskMenuPopover(timers, [], now, null, draftState({ error: "시간 초과 (180초)" }));
+    expect(failed.html).toContain("시간 초과 (180초)");
+    expect(failed.html).toContain("draft-steps");
+  });
+
+  it("draft-steps 액션 URL을 파싱한다", () => {
+    expect(parseTaskMenuPopoverAction("taskmaster-menu://draft-steps?taskId=task_x"))
+      .toEqual({ kind: "draft-steps", taskId: "task_x" });
+    expect(parseTaskMenuPopoverAction("taskmaster-menu://draft-steps")).toBeNull();
   });
 });

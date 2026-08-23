@@ -5,6 +5,7 @@
 // TaskService/TaskTimerService만 통과하므로 Obsidian 보드와 Markdown이 같은 정본을 쓴다.
 
 import { t } from "../../i18n";
+import type { AiDraftController } from "../../services/AiDraftService";
 import { debugLog } from "./debugLog";
 import type { Task, TaskId } from "../../core/types";
 import type { TaskMasterStore } from "../../store/taskMasterStore";
@@ -73,6 +74,7 @@ export type TaskMenuPopoverAction =
   | { kind: "start" | "pause" | "stop"; taskId: TaskId }
   | { kind: "select-step"; taskId: TaskId; step: number }
   | { kind: "add-step"; taskId: TaskId; value: string }
+  | { kind: "draft-steps"; taskId: TaskId }
   | { kind: "start-task"; taskId: TaskId }
   | { kind: "create-task"; value: string };
 
@@ -101,6 +103,7 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
    * 패널을 닫아도 유지해 매번 다시 접지 않는다.
    */
   private reportCollapsed = true;
+  private unsubscribeDrafts: (() => void) | null = null;
 
   constructor(
     private readonly timers: TaskTimerService,
@@ -112,6 +115,7 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
     private readonly tickMs: number = TIMER_TICK_MS,
     private readonly reports: AiReportController | null = null,
     private readonly openReport: () => void = () => {},
+    private readonly drafts: AiDraftController | null = null,
   ) {}
 
   isSupported(): boolean {
@@ -171,11 +175,13 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
     this.unsubscribeTimers = this.timers.subscribe(() => this.update());
     this.unsubscribeStore = this.store.subscribe(() => this.update());
     this.unsubscribeReports = this.reports?.subscribe(() => this.update()) ?? null;
+    this.unsubscribeDrafts = this.drafts?.subscribe(() => this.update()) ?? null;
     this.intervalId = window.setInterval(() => {
       // 리포트 생성 중에는 경과 초를 보여줘야 하므로 타이머가 없어도 갱신한다.
       if (
         this.timers.getTimers().some((timer) => timer.phase === "running") ||
-        this.reports?.getState().status === "running"
+        this.reports?.getState().status === "running" ||
+        this.drafts?.getState().status === "running"
       ) this.update();
     }, this.tickMs);
     this.update();
@@ -208,6 +214,8 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
     this.unsubscribeStore = null;
     this.unsubscribeReports?.();
     this.unsubscribeReports = null;
+    this.unsubscribeDrafts?.();
+    this.unsubscribeDrafts = null;
     if (this.intervalId != null) {
       window.clearInterval(this.intervalId);
       this.intervalId = null;
@@ -223,6 +231,7 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
       [...this.store.getState().tasks.values()],
       now,
       this.reportPanelState(now),
+      this.draftPanelState(now),
     );
     this.handle.setContent(content.html, content.height);
   }
@@ -241,6 +250,26 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
       error: state.error,
       collapsed: this.reportCollapsed,
       stale: !isReportForDay(state.report, now),
+      runningSeconds: state.startedAt == null
+        ? 0
+        : Math.max(0, Math.floor((now.getTime() - state.startedAt) / 1000)),
+    };
+  }
+
+  /**
+   * 단계 초안은 **비어 있는 카드에만** 건다. 이미 적어 둔 단계를 좁은 패널에서
+   * 덮어쓰면 되돌릴 방법이 없다 — 비평 모드는 읽을 자리가 있는 보드 모달이 소유한다.
+   */
+  private draftPanelState(now: Date): AiDraftPanelState | null {
+    const drafts = this.drafts;
+    if (!drafts?.isSupported()) {
+      debugLog(`ai draft section skipped: wired=${String(drafts != null)}`);
+      return null;
+    }
+    const state = drafts.getState();
+    return {
+      running: state.status === "running",
+      error: state.status === "error" ? state.error : null,
       runningSeconds: state.startedAt == null
         ? 0
         : Math.max(0, Math.floor((now.getTime() - state.startedAt) / 1000)),
@@ -291,6 +320,26 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
           });
           return;
         }
+        case "draft-steps": {
+          const task = this.store.getState().tasks.get(action.taskId);
+          if (!task || task.archivedAt || (task.steps?.length ?? 0) > 0) return;
+          const ok = await this.drafts?.suggest({
+            title: task.title,
+            body: task.bodySummary ?? "",
+            jiraKey: task.jiraKey,
+            existingSteps: [],
+            existingTags: task.tags ?? [],
+            existingRemarks: task.remarks,
+            projectTitles: [...this.store.getState().projects.values()].map((project) => project.title),
+            deep: true,
+          });
+          if (!ok) return;
+          const steps = this.drafts?.getState().suggestion?.steps ?? [];
+          if (steps.length === 0) return;
+          // 빈 카드에만 걸리는 경로라 덮어쓸 값이 없다.
+          await this.tasks.updateTask(task.id, { steps, currentStep: 1 });
+          return;
+        }
         case "start-task": {
           const task = this.store.getState().tasks.get(action.taskId);
           if (!task || task.archivedAt) return;
@@ -327,12 +376,20 @@ export interface AiReportPanelState {
   runningSeconds: number;
 }
 
+/** 패널이 그릴 AI 초안 상태. null이면 초안 진입점을 그리지 않는다. */
+export interface AiDraftPanelState {
+  running: boolean;
+  error: string | null;
+  runningSeconds: number;
+}
+
 /** 모든 vault 문자열은 escape한 뒤 외부 BrowserWindow에 넣는다. */
 export function renderTaskMenuPopover(
   timers: TaskTimerSnapshot[],
   tasks: Task[],
   now = new Date(),
   report: AiReportPanelState | null = null,
+  draft: AiDraftPanelState | null = null,
 ): TaskMenuPopoverContent {
   const activeTaskIds = new Set(timers.map((timer) => timer.taskId));
   const nextTasks = tasks
@@ -357,7 +414,7 @@ export function renderTaskMenuPopover(
   const nextHtml = nextTasks.length > 0
     ? nextTasks.map(renderNextTask).join("")
     : `<div class="list-empty">${escapeHtml(t("timer.popover.noNext"))}</div>`;
-  const stepForm = timers.length > 0 ? renderStepForm(timers) : "";
+  const stepForm = timers.length > 0 ? renderStepForm(timers, draft) : "";
   const rowCount = timers.reduce((sum, timer) => sum + Math.max(1, timer.steps.length), 0);
   const reportSection = report ? renderAiReportSection(report) : { html: "", height: 0 };
   const estimatedHeight =
@@ -539,17 +596,38 @@ function renderStep(timer: TaskTimerSnapshot, value: string, index: number): str
   </li>`;
 }
 
-function renderStepForm(timers: TaskTimerSnapshot[]): string {
+function renderStepForm(timers: TaskTimerSnapshot[], draft: AiDraftPanelState | null): string {
   const options = timers.map((timer) =>
     `<option value="${escapeHtml(timer.taskId)}">${escapeHtml(truncate(timer.title, 34))}</option>`,
   ).join("");
-  return `<form class="quick-form step-form" data-action="taskmaster-menu://add-step">
+  return `${renderDraftRow(timers, draft)}<form class="quick-form step-form" data-action="taskmaster-menu://add-step">
     ${timers.length > 1
       ? `<select data-preserve="step-task" name="taskId" aria-label="${escapeHtml(t("timer.popover.chooseTask"))}">${options}</select>`
       : `<input type="hidden" name="taskId" value="${escapeHtml(timers[0]?.taskId ?? "")}">`}
     <input data-preserve="new-step" name="value" maxlength="240" autocomplete="off" autofocus placeholder="${escapeHtml(t("timer.popover.stepPlaceholder"))}" aria-label="${escapeHtml(t("timer.popover.stepPlaceholder"))}">
     <button type="submit" aria-label="${escapeHtml(t("timer.popover.addStep"))}">＋</button>
   </form>`;
+}
+
+/**
+ * 단계가 비어 있는 카드 하나에만 초안 진입점을 둔다. 좁은 패널에는 필드별
+ * 수락/거절 UI를 놓을 자리가 없으므로 덮어쓸 값이 없는 경우로 범위를 좁힌다.
+ */
+function renderDraftRow(timers: TaskTimerSnapshot[], draft: AiDraftPanelState | null): string {
+  if (!draft) return "";
+  if (draft.running) {
+    return `<div class="draft-row running">${escapeHtml(
+      t("timer.popover.draftRunning").replace("{seconds}", String(draft.runningSeconds)),
+    )}</div>`;
+  }
+  const error = draft.error
+    ? `<div class="draft-row error">${escapeHtml(draft.error)}</div>`
+    : "";
+  const target = timers.length === 1 && (timers[0]?.steps.length ?? 0) === 0 ? timers[0] : null;
+  if (!target) return error;
+  return `${error}<div class="draft-row">
+    <a class="draft-run" href="${actionUrl("draft-steps", target.taskId)}">✨ ${escapeHtml(t("timer.popover.draftSteps"))}</a>
+  </div>`;
 }
 
 function renderNextTask(task: Task): string {
@@ -617,8 +695,8 @@ export function parseTaskMenuPopoverAction(url: string): TaskMenuPopoverAction |
     }
     const taskId = parsed.searchParams.get("taskId") as TaskId | null;
     if (!taskId) return null;
-    if (["start", "pause", "stop", "start-task"].includes(kind)) {
-      return { kind: kind as "start" | "pause" | "stop" | "start-task", taskId };
+    if (["start", "pause", "stop", "start-task", "draft-steps"].includes(kind)) {
+      return { kind: kind as "start" | "pause" | "stop" | "start-task" | "draft-steps", taskId };
     }
     if (kind === "select-step") {
       const step = Number(parsed.searchParams.get("step"));
@@ -1103,6 +1181,13 @@ const POPOVER_DOCUMENT = `<!doctype html>
   .section-heading { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; }
   .section-heading h2 { flex: 1; color: #d8dbe1; font-size: 12px; font-weight: 700; letter-spacing: .01em; }
   .section-heading span { color: #7f8590; font-size: 11px; font-variant-numeric: tabular-nums; }
+  /* AI 단계 초안 — 단계 입력 폼 바로 위 한 줄. 실패도 같은 자리에 남긴다. */
+  .draft-row { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; font-size: 10.5px; }
+  .draft-row.running { color: #8ec5ff; font-variant-numeric: tabular-nums; }
+  .draft-row.error { color: #e08c8c; }
+  .draft-run { padding: 3px 8px; border-radius: 8px; color: #9aa1ad; background: rgba(255,255,255,.06); font-weight: 650; }
+  .draft-run:hover { color: #eaf2ff; background: rgba(117,180,255,.18); }
+
   /* AI 리포트 — 하루 한 번 읽는 블록이라 카드 하나로 묶고 접을 수 있게 둔다. */
   .section-heading .stale { color: #e0a561; }
   .report-run { flex: none; padding: 4px 9px; border-radius: 8px; color: #9aa1ad; background: rgba(255,255,255,.06); font-size: 10.5px; font-weight: 650; }

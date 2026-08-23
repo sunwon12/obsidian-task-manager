@@ -33,6 +33,8 @@ import {
 import { IndexService } from "./integration/IndexService";
 import { AiReportService } from "./services/AiReportService";
 import { createNodeAiReportRunner } from "./integration/aiReportRunner";
+import { AiDraftService } from "./services/AiDraftService";
+import { createNodeAiDraftRunner } from "./integration/aiDraftRunner";
 import { createTaskMasterStore, type TaskMasterStore } from "./store/taskMasterStore";
 import type { PluginSettings } from "./core/types";
 
@@ -49,6 +51,7 @@ export interface ServiceContainer {
   meetingService: MeetingService;
   jiraSyncService?: JiraSyncService;
   aiReportService?: AiReportService;
+  aiDraftService?: AiDraftService;
   events: EventBus;
   diagnostics: DiagnosticsLog;
   settings: PluginSettings;
@@ -126,6 +129,20 @@ export default class TaskMasterPlugin extends Plugin {
     );
     this.aiReportService = aiReportService;
 
+    // AI 초안: 같은 CLI를 쓰되 파일을 쓰지 않고 JSON만 받는다. 적용은 UI가 고른
+    // 필드만 TaskService를 태운다 — AI가 카드 .md를 직접 고치면 knownMtime
+    // conflict detection과 부딪히고 passthrough/fieldOrder 보존이 깨진다 (ADR-0012).
+    const aiDraftService = new AiDraftService(
+      createNodeAiDraftRunner(),
+      () => ({
+        enabled: settings.aiDraftEnabled,
+        binary: settings.aiReportBinary.trim() || "claude",
+        cwd: this.vaultBasePath(),
+        model: settings.aiDraftModel.trim(),
+        timeoutMs: Math.max(1, settings.aiDraftTimeoutMinutes) * 60_000,
+      }),
+    );
+
     // T-901: DOING 타이머. 상태는 vault의 .timers.json에 저장해 재시작 후 복원한다.
     const timerService = new TaskTimerService(
       events, store, taskService,
@@ -156,6 +173,7 @@ export default class TaskMasterPlugin extends Plugin {
     this.container = {
       store, taskService, boardService, projectService, projectMemoService, meetingService, jiraSyncService,
       aiReportService,
+      aiDraftService,
       events, diagnostics, settings,
       saveSettings: async (next) => {
         Object.assign(settings, next);
@@ -250,6 +268,7 @@ export default class TaskMasterPlugin extends Plugin {
             undefined,
             aiReportService,
             () => void this.openAiReportFile(settings.aiReportPath),
+            aiDraftService,
           );
           // 기본 타이머 UI는 macOS 메뉴바 패널 하나로 제한한다.
           // Obsidian 창 위 자동 배너은 내용을 가리고 메뉴바와 역할이 겹쳐 마운트하지 않는다.

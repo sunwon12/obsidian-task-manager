@@ -323,6 +323,12 @@ export interface PluginSettings {
   aiReportScheduleAt: string;
   /** 한 번 실행에 허용하는 시간(분). */
   aiReportTimeoutMinutes: number;
+  /** 카드 편집·빠른 패널의 AI 초안 버튼을 켠다. 실행 파일은 aiReportBinary를 함께 쓴다. */
+  aiDraftEnabled: boolean;
+  /** `--model` 로 넘길 값. 비우면 CLI 기본 모델을 쓴다. */
+  aiDraftModel: string;
+  /** 한 번 실행에 허용하는 시간(분). 깊은 경로가 1~2분 걸린다. */
+  aiDraftTimeoutMinutes: number;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -352,4 +358,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   aiReportPath: "02_일상/03_성찰/일일-일정-피드백.md",
   aiReportScheduleAt: "08:40",
   aiReportTimeoutMinutes: 10,
+  aiDraftEnabled: true,
+  aiDraftModel: "sonnet",
+  aiDraftTimeoutMinutes: 3,
 };

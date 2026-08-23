@@ -5,6 +5,40 @@ All notable changes to TaskMaster Obsidian plugin will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-08-23
+
+### Added
+
+- **AI draft for card fields.** The edit modal gained an `AI 초안` section with two paths:
+  `빠르게 채우기` sends only the card (5-15s observed) and `깊게 채우기` lets Claude read past
+  cards and the linked Jira issue (51-80s observed). It proposes priority, project, tags,
+  remarks and a work plan. Suggestions are accepted or rejected **per field**, and a field that
+  already holds a value starts unchecked, so a draft never silently replaces something you wrote.
+- The model returns JSON only and never edits files. Accepted fields go through `TaskService`
+  like any other edit, so `knownMtime` conflict detection, `passthrough` frontmatter and field
+  order all keep working. Read-only tools (`Read,Grep,Glob`) are the only ones opened, and the
+  write-capable permission mode used by the report is never passed. See ADR-0012.
+- **Steps now carry a kind prefix** — `[결정] [조사] [실작업] [검증] [대기]`. The kind is a routing
+  key for who does the step, not a time bucket: `결정` is people-only, `조사`/`실작업` can be
+  delegated, `검증` is machine-run and human-judged, `대기` is nobody's work. `steps` stays
+  `string[]`; no schema bump until the classification proves itself on real cards.
+- The panel **reports rule breaks instead of fixing them** — no decision step, a first step that
+  is neither decision nor research, fewer than 3 or more than 7 steps, an unreadable prefix.
+  Silently repairing them would hide the fact that the model skipped the decision.
+- **A card that already has steps is never overwritten.** In that case the run returns a critique
+  (missing steps, decisions still open, order that does not hold) and the work plan is left alone.
+- The quick panel shows `✨ AI로 단계 세우기` for a single focused card with no steps, with the
+  elapsed counter and failure reason in the same row. Cards that already have steps get no
+  entry point there — the panel has no room for per-field review.
+- Settings (AI draft): enable, model (`sonnet` by default), timeout in minutes. The `claude`
+  executable is shared with the AI report setting.
+
+### Changed
+
+- `claude` process spawning moved into `src/integration/claudeProcess.ts` and both the report and
+  the draft call it. The report's arguments are unchanged and now covered by a test that stubs
+  `window.require`, so the adapter that only runs on a real device is no longer untested.
+
 ## [0.10.0] - 2026-08-23
 
 ### Added
