@@ -18,6 +18,7 @@ import {
 } from "../../../src/ui/timer/TaskMenuPopover";
 import { parseAiReport } from "../../../src/core/aiReport";
 import type { AiReportController, AiReportState } from "../../../src/services/AiReportService";
+import type { AiDraftController } from "../../../src/services/AiDraftService";
 import { TaskTimerService, type TimerPersistencePort } from "../../../src/services/TaskTimerService";
 import { createTaskMasterStore } from "../../../src/store/taskMasterStore";
 import { EventBus } from "../../../src/core/eventBus";
@@ -555,37 +556,76 @@ describe("TaskMenuPopover — AI 리포트 섹션", () => {
   });
 });
 
-describe("TaskMenuPopover — AI 단계 초안", () => {
+describe("TaskMenuPopover — AI 카드 채우기", () => {
   const draftState = (overrides: Partial<AiDraftPanelState> = {}): AiDraftPanelState => ({
     running: false,
     error: null,
     runningSeconds: 0,
+    critique: [],
     ...overrides,
   });
 
-  it("단계가 비어 있는 집중 작업 하나에만 초안 진입점을 건다", async () => {
+  it("집중 작업이 여러 개여도 카드마다 진입점을 건다", async () => {
     const graph = buildGraph();
     await graph.timers.init();
-    const focus = await graph.taskService.createTask({ title: "오피셜 체크", status: "doing" });
+    const first = await graph.taskService.createTask({ title: "첫 카드", status: "doing" });
+    const second = await graph.taskService.createTask({ title: "둘째 카드", status: "doing" });
 
     const content = renderTaskMenuPopover(
-      graph.timers.getTimers(), [], new Date("2026-08-22T12:00:00+09:00"), null, draftState(),
+      graph.timers.getTimers(),
+      [...graph.store.getState().tasks.values()],
+      new Date("2026-08-22T12:00:00+09:00"),
+      null,
+      draftState(),
     );
 
-    expect(content.html).toContain("AI로 단계 세우기");
-    expect(content.html).toContain(`taskmaster-menu://draft-steps?taskId=${focus.id}`);
+    expect(content.html).toContain("AI로 채우기");
+    expect(content.html).toContain(`taskmaster-menu://draft-card?taskId=${first.id}`);
+    expect(content.html).toContain(`taskmaster-menu://draft-card?taskId=${second.id}`);
   });
 
-  it("이미 단계가 있으면 좁은 패널에서 덮어쓸 경로 자체를 만들지 않는다", async () => {
+  it("빈 칸이 하나도 없는 카드에는 진입점을 그리지 않는다", async () => {
     const graph = buildGraph();
     await graph.timers.init();
-    await graph.taskService.createTask({ title: "오피셜 체크", status: "doing", steps: ["[실작업] 구현"] });
+    const task = await graph.taskService.createTask({
+      title: "다 채워진 카드",
+      status: "doing",
+      steps: ["[결정] 스키마 확정"],
+      tags: ["업무"],
+      priority: "high",
+      remarks: "이미 적어 둔 비고",
+      project: "project_01FILLED" as never,
+    });
 
     const content = renderTaskMenuPopover(
-      graph.timers.getTimers(), [], new Date("2026-08-22T12:00:00+09:00"), null, draftState(),
+      graph.timers.getTimers(),
+      [...graph.store.getState().tasks.values()],
+      new Date("2026-08-22T12:00:00+09:00"),
+      null,
+      draftState(),
     );
 
-    expect(content.html).not.toContain("draft-steps");
+    expect(content.html).not.toContain(`draft-card?taskId=${task.id}`);
+  });
+
+  it("단계가 있어도 다른 칸이 비었으면 진입점을 남긴다", async () => {
+    const graph = buildGraph();
+    await graph.timers.init();
+    const task = await graph.taskService.createTask({
+      title: "단계만 있는 카드",
+      status: "doing",
+      steps: ["[결정] 스키마 확정"],
+    });
+
+    const content = renderTaskMenuPopover(
+      graph.timers.getTimers(),
+      [...graph.store.getState().tasks.values()],
+      new Date("2026-08-22T12:00:00+09:00"),
+      null,
+      draftState(),
+    );
+
+    expect(content.html).toContain(`draft-card?taskId=${task.id}`);
   });
 
   it("초안 서비스가 없으면 진입점도 없다", async () => {
@@ -597,29 +637,96 @@ describe("TaskMenuPopover — AI 단계 초안", () => {
       graph.timers.getTimers(), [], new Date("2026-08-22T12:00:00+09:00"), null, null,
     );
 
-    expect(content.html).not.toContain("draft-steps");
+    expect(content.html).not.toContain("draft-card");
   });
 
-  it("생성 중과 실패를 같은 자리에 남긴다", async () => {
+  it("생성 중·실패·비평을 같은 자리에 남긴다", async () => {
     const graph = buildGraph();
     await graph.timers.init();
     await graph.taskService.createTask({ title: "오피셜 체크", status: "doing" });
     const timers = graph.timers.getTimers();
+    const tasks = [...graph.store.getState().tasks.values()];
     const now = new Date("2026-08-22T12:00:00+09:00");
 
-    const running = renderTaskMenuPopover(timers, [], now, null, draftState({ running: true, runningSeconds: 42 }));
+    const running = renderTaskMenuPopover(timers, tasks, now, null, draftState({ running: true, runningSeconds: 42 }));
     expect(running.html).toContain("42");
-    expect(running.html).not.toContain("draft-steps");
+    // 도는 동안에는 또 누르지 못하게 진입점을 감춘다.
+    expect(running.html).not.toContain("draft-card");
 
-    const failed = renderTaskMenuPopover(timers, [], now, null, draftState({ error: "시간 초과 (180초)" }));
+    const failed = renderTaskMenuPopover(timers, tasks, now, null, draftState({ error: "시간 초과 (180초)" }));
     expect(failed.html).toContain("시간 초과 (180초)");
-    expect(failed.html).toContain("draft-steps");
+    expect(failed.html).toContain("draft-card");
+
+    const critiqued = renderTaskMenuPopover(timers, tasks, now, null, draftState({
+      critique: ["1번이 닫히기 전엔 3번이 불가능하다"],
+    }));
+    expect(critiqued.html).toContain("1번이 닫히기 전엔 3번이 불가능하다");
   });
 
-  it("draft-steps 액션 URL을 파싱한다", () => {
-    expect(parseTaskMenuPopoverAction("taskmaster-menu://draft-steps?taskId=task_x"))
-      .toEqual({ kind: "draft-steps", taskId: "task_x" });
-    expect(parseTaskMenuPopoverAction("taskmaster-menu://draft-steps")).toBeNull();
+  it("빈 칸만 채우고 이미 적어 둔 값은 건드리지 않는다", async () => {
+    const graph = buildGraph();
+    await graph.timers.init();
+    const task = await graph.taskService.createTask({
+      title: "반쯤 채워진 카드",
+      status: "doing",
+      steps: ["[결정] 내가 직접 적은 단계"],
+      remarks: "내가 적은 비고",
+    });
+
+    const drafts: AiDraftController = {
+      isSupported: () => true,
+      getState: () => ({
+        status: "idle",
+        suggestion: {
+          priority: "high",
+          projectTitle: null,
+          tags: ["업무", "커뮤니티"],
+          remarks: "AI가 지어낸 비고",
+          steps: ["[실작업] AI가 지어낸 단계"],
+          critique: [],
+          rationale: null,
+        },
+        error: null,
+        startedAt: null,
+        mode: "critique",
+        deep: true,
+      }),
+      subscribe: () => () => {},
+      suggest: async () => true,
+      reset: () => {},
+    };
+
+    const handle = new FakePopoverHandle();
+    let dispatch!: (action: TaskMenuPopoverAction) => void;
+    const port: TaskMenuPopoverPort = {
+      isSupported: () => true,
+      create: (_anchor, onAction) => { dispatch = onAction; return handle; },
+      defaultAnchor: () => ({ x: 0, y: 0, width: 24, height: 24 }),
+    };
+    const popover = new TaskMenuPopover(
+      graph.timers, graph.taskService, graph.store, port,
+      vi.fn(), () => new Date("2026-08-22T12:00:00+09:00"),
+      undefined, null, () => {}, drafts,
+    );
+    expect(popover.openDefault()).toBe(true);
+
+    dispatch({ kind: "draft-card", taskId: task.id });
+    await vi.waitFor(() => {
+      expect(graph.store.getState().tasks.get(task.id)?.tags).toEqual(["업무", "커뮤니티"]);
+    });
+
+    const updated = graph.store.getState().tasks.get(task.id);
+    // 비어 있던 칸만 들어간다.
+    expect(updated?.priority).toBe("high");
+    // 이미 있던 값은 그대로 — 초안이 조용히 밀어내면 안 된다.
+    expect(updated?.remarks).toBe("내가 적은 비고");
+    expect(updated?.steps).toEqual(["[결정] 내가 직접 적은 단계"]);
+  });
+
+  it("draft-card 액션 URL을 파싱한다", () => {
+    expect(parseTaskMenuPopoverAction("taskmaster-menu://draft-card?taskId=task_x"))
+      .toEqual({ kind: "draft-card", taskId: "task_x" });
+    expect(parseTaskMenuPopoverAction("taskmaster-menu://draft-card")).toBeNull();
   });
 });
 

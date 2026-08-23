@@ -5,6 +5,22 @@ All notable changes to TaskMaster Obsidian plugin will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-08-23
+
+### Changed
+
+- **The quick panel's AI entry point moved onto each focus card and now fills attributes, not just
+  steps.** It used to appear only when exactly one card was focused and that card had no steps, so
+  it vanished the moment a second card entered DOING. Each focus card now carries its own
+  `✨ AI로 채우기`, and it shows whenever that card still has a blank worth filling — empty steps,
+  priority, tags, remarks or project.
+- Filling attributes is the point, not a bonus: tags, priority and remarks are what a later search
+  matches on, so a card with an empty frontmatter is a card that will not be found again.
+- **Only blank fields are written.** The panel has no room for per-field accept/reject, so the rule
+  is narrower than the edit modal's: a field that already holds a value is never touched, including
+  steps. Running it on a card that already has steps therefore returns a critique instead, and those
+  lines are now shown under the focus list instead of being discarded.
+
 ## [0.12.0] - 2026-08-23
 
 ### Added

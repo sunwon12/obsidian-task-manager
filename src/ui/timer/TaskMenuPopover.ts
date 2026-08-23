@@ -7,7 +7,7 @@
 import { t } from "../../i18n";
 import type { AiDraftController } from "../../services/AiDraftService";
 import { debugLog } from "./debugLog";
-import type { Task, TaskId } from "../../core/types";
+import type { Task, TaskId, UpdateTaskInput } from "../../core/types";
 import type { TaskMasterStore } from "../../store/taskMasterStore";
 import type { TaskService } from "../../services/TaskService";
 import type { AiReport, AiReportBullet } from "../../core/aiReport";
@@ -74,7 +74,7 @@ export type TaskMenuPopoverAction =
   | { kind: "start" | "pause" | "stop"; taskId: TaskId }
   | { kind: "select-step"; taskId: TaskId; step: number }
   | { kind: "add-step"; taskId: TaskId; value: string }
-  | { kind: "draft-steps"; taskId: TaskId }
+  | { kind: "draft-card"; taskId: TaskId }
   | { kind: "park-task"; taskId: TaskId }
   | { kind: "start-task"; taskId: TaskId }
   | { kind: "create-task"; value: string };
@@ -274,6 +274,7 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
       runningSeconds: state.startedAt == null
         ? 0
         : Math.max(0, Math.floor((now.getTime() - state.startedAt) / 1000)),
+      critique: state.suggestion?.critique ?? [],
     };
   }
 
@@ -321,24 +322,40 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
           });
           return;
         }
-        case "draft-steps": {
+        case "draft-card": {
           const task = this.store.getState().tasks.get(action.taskId);
-          if (!task || task.archivedAt || (task.steps?.length ?? 0) > 0) return;
+          if (!task || task.archivedAt) return;
+          const projects = [...this.store.getState().projects.values()];
           const ok = await this.drafts?.suggest({
             title: task.title,
             body: task.bodySummary ?? "",
             jiraKey: task.jiraKey,
-            existingSteps: [],
+            // 단계가 이미 있으면 서비스가 비평 모드로 돈다 — steps는 비어서 오고 덮어쓸 일이 없다.
+            existingSteps: task.steps ?? [],
             existingTags: task.tags ?? [],
             existingRemarks: task.remarks,
-            projectTitles: [...this.store.getState().projects.values()].map((project) => project.title),
+            projectTitles: projects.map((project) => project.title),
             deep: true,
           });
           if (!ok) return;
-          const steps = this.drafts?.getState().suggestion?.steps ?? [];
-          if (steps.length === 0) return;
-          // 빈 카드에만 걸리는 경로라 덮어쓸 값이 없다.
-          await this.tasks.updateTask(task.id, { steps, currentStep: 1 });
+          const suggestion = this.drafts?.getState().suggestion;
+          if (!suggestion) return;
+          // 좁은 패널에는 필드별 수락/거절 UI를 놓을 자리가 없다. 그래서 **비어 있는 칸만**
+          // 채운다 — 내가 적어 둔 값을 초안이 조용히 밀어내는 일이 없어야 한다 (ADR-0012 §2).
+          const input: UpdateTaskInput = {};
+          if ((task.steps?.length ?? 0) === 0 && suggestion.steps.length > 0) {
+            input.steps = suggestion.steps;
+            input.currentStep = 1;
+          }
+          if (task.priority == null && suggestion.priority != null) input.priority = suggestion.priority;
+          if ((task.tags?.length ?? 0) === 0 && suggestion.tags.length > 0) input.tags = suggestion.tags;
+          if (!task.remarks && suggestion.remarks) input.remarks = suggestion.remarks;
+          if (task.project == null && suggestion.projectTitle) {
+            const matched = projects.find((project) => project.title.trim() === suggestion.projectTitle?.trim());
+            if (matched) input.project = matched.id;
+          }
+          if (Object.keys(input).length === 0) return;
+          await this.tasks.updateTask(task.id, input);
           return;
         }
         case "park-task": {
@@ -392,6 +409,8 @@ export interface AiDraftPanelState {
   running: boolean;
   error: string | null;
   runningSeconds: number;
+  /** 단계가 이미 있는 카드에 돌리면 초안 대신 비평이 온다. 버리지 않고 보여준다. */
+  critique: string[];
 }
 
 /** 모든 vault 문자열은 escape한 뒤 외부 BrowserWindow에 넣는다. */
@@ -415,8 +434,9 @@ export function renderTaskMenuPopover(
     day: "numeric",
     weekday: "short",
   }).format(now);
+  const taskById = new Map(tasks.map((task) => [task.id, task]));
   const focusHtml = timers.length > 0
-    ? timers.map(renderFocusCard).join("")
+    ? timers.map((timer) => renderFocusCard(timer, taskById.get(timer.taskId) ?? null, draft)).join("")
     : `<div class="empty-state">
         <span class="empty-mark">✓</span>
         <strong>${escapeHtml(t("timer.popover.noFocus"))}</strong>
@@ -559,7 +579,21 @@ function renderReportBullet(bullet: AiReportBullet): string {
   return `<li>${lead}${escapeHtml(bullet.body)}</li>`;
 }
 
-function renderFocusCard(timer: TaskTimerSnapshot): string {
+/** 이 카드에 AI가 채울 빈 칸이 하나라도 있는가. 없으면 버튼을 그리지 않는다. */
+function hasBlankToFill(task: Task | null): boolean {
+  if (!task) return false;
+  return (task.steps?.length ?? 0) === 0
+    || task.priority == null
+    || (task.tags?.length ?? 0) === 0
+    || !task.remarks
+    || task.project == null;
+}
+
+function renderFocusCard(
+  timer: TaskTimerSnapshot,
+  task: Task | null,
+  draft: AiDraftPanelState | null,
+): string {
   const phaseClass = timer.phase === "running" ? "running" : timer.phase === "paused" ? "paused" : "idle";
   const phaseLabel = timer.phase === "running"
     ? t("timer.popover.running")
@@ -585,6 +619,9 @@ function renderFocusCard(timer: TaskTimerSnapshot): string {
       </nav>
     </div>
     ${steps}
+    ${draft && !draft.running && hasBlankToFill(task)
+      ? `<a class="draft-run" href="${actionUrl("draft-card", timer.taskId)}">✨ ${escapeHtml(t("timer.popover.draftCard"))}</a>`
+      : ""}
   </article>`;
 }
 
@@ -621,10 +658,10 @@ function renderStepForm(timers: TaskTimerSnapshot[], draft: AiDraftPanelState | 
 }
 
 /**
- * 단계가 비어 있는 카드 하나에만 초안 진입점을 둔다. 좁은 패널에는 필드별
- * 수락/거절 UI를 놓을 자리가 없으므로 덮어쓸 값이 없는 경우로 범위를 좁힌다.
+ * 초안 실행 상태만 담는 줄. 진입점은 카드마다 따로 있으므로 여기에는 버튼을 두지 않는다.
+ * 단계가 이미 있는 카드에 돌리면 초안 대신 비평이 오는데, 안 보여주면 그대로 버려진다.
  */
-function renderDraftRow(timers: TaskTimerSnapshot[], draft: AiDraftPanelState | null): string {
+function renderDraftRow(_timers: TaskTimerSnapshot[], draft: AiDraftPanelState | null): string {
   if (!draft) return "";
   if (draft.running) {
     return `<div class="draft-row running">${escapeHtml(
@@ -634,11 +671,12 @@ function renderDraftRow(timers: TaskTimerSnapshot[], draft: AiDraftPanelState | 
   const error = draft.error
     ? `<div class="draft-row error">${escapeHtml(draft.error)}</div>`
     : "";
-  const target = timers.length === 1 && (timers[0]?.steps.length ?? 0) === 0 ? timers[0] : null;
-  if (!target) return error;
-  return `${error}<div class="draft-row">
-    <a class="draft-run" href="${actionUrl("draft-steps", target.taskId)}">✨ ${escapeHtml(t("timer.popover.draftSteps"))}</a>
-  </div>`;
+  const critique = draft.critique.length > 0
+    ? `<ul class="draft-critique">${draft.critique.slice(0, 3).map(
+        (line) => `<li>${escapeHtml(line)}</li>`,
+      ).join("")}</ul>`
+    : "";
+  return `${error}${critique}`;
 }
 
 function renderNextTask(task: Task): string {
@@ -706,8 +744,8 @@ export function parseTaskMenuPopoverAction(url: string): TaskMenuPopoverAction |
     }
     const taskId = parsed.searchParams.get("taskId") as TaskId | null;
     if (!taskId) return null;
-    if (["start", "pause", "stop", "start-task", "draft-steps", "park-task"].includes(kind)) {
-      return { kind: kind as "start" | "pause" | "stop" | "start-task" | "draft-steps" | "park-task", taskId };
+    if (["start", "pause", "stop", "start-task", "draft-card", "park-task"].includes(kind)) {
+      return { kind: kind as "start" | "pause" | "stop" | "start-task" | "draft-card" | "park-task", taskId };
     }
     if (kind === "select-step") {
       const step = Number(parsed.searchParams.get("step"));
@@ -1203,6 +1241,9 @@ export const POPOVER_DOCUMENT = `<!doctype html>
   .draft-row { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; font-size: 10.5px; }
   .draft-row.running { color: #8ec5ff; font-variant-numeric: tabular-nums; }
   .draft-row.error { color: #e08c8c; }
+  .draft-critique { margin: 0 0 6px; padding-left: 16px; font-size: 10.5px; color: #b6c0cc; }
+  .draft-critique li { margin: 2px 0; }
+  .focus-card .draft-run { display: inline-block; margin-top: 8px; }
   .draft-run { padding: 3px 8px; border-radius: 8px; color: #9aa1ad; background: rgba(255,255,255,.06); font-weight: 650; }
   .draft-run:hover { color: #eaf2ff; background: rgba(117,180,255,.18); }
 
