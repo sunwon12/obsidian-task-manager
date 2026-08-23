@@ -259,6 +259,8 @@ const ko = {
   "timer.popover.review": "리뷰",
   "timer.popover.hold": "보류",
   "timer.popover.backlog": "후보",
+  "timer.popover.draftAll": "모두 채우기",
+  "timer.popover.draftBatch": "{done}/{total}",
   "timer.popover.draftCard": "AI로 채우기",
   "timer.popover.draftRunning": "단계 초안 생성 중 {seconds}초",
   "timer.popover.todo": "할 일",

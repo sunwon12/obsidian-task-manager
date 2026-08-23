@@ -562,6 +562,8 @@ describe("TaskMenuPopover — AI 카드 채우기", () => {
     error: null,
     runningSeconds: 0,
     critique: [],
+    batch: null,
+    fillableCount: 1,
     ...overrides,
   });
 
@@ -721,6 +723,61 @@ describe("TaskMenuPopover — AI 카드 채우기", () => {
     // 이미 있던 값은 그대로 — 초안이 조용히 밀어내면 안 된다.
     expect(updated?.remarks).toBe("내가 적은 비고");
     expect(updated?.steps).toEqual(["[결정] 내가 직접 적은 단계"]);
+  });
+
+  it("채울 카드가 둘 이상일 때만 모두 채우기를 띄운다", async () => {
+    const graph = buildGraph();
+    await graph.timers.init();
+    await graph.taskService.createTask({ title: "첫 카드", status: "doing" });
+    await graph.taskService.createTask({ title: "둘째 카드", status: "doing" });
+    const timers = graph.timers.getTimers();
+    const tasks = [...graph.store.getState().tasks.values()];
+    const now = new Date("2026-08-22T12:00:00+09:00");
+
+    const many = renderTaskMenuPopover(timers, tasks, now, null, draftState({ fillableCount: 2 }));
+    expect(many.html).toContain("taskmaster-menu://draft-all");
+    expect(many.html).toContain("모두 채우기");
+
+    const one = renderTaskMenuPopover(timers, tasks, now, null, draftState({ fillableCount: 1 }));
+    expect(one.html).not.toContain("draft-all");
+  });
+
+  it("실행 중에도 카드 버튼은 자리를 지키되 누를 수 없다", async () => {
+    const graph = buildGraph();
+    await graph.timers.init();
+    const task = await graph.taskService.createTask({ title: "빈 카드", status: "doing" });
+    const content = renderTaskMenuPopover(
+      graph.timers.getTimers(),
+      [...graph.store.getState().tasks.values()],
+      new Date("2026-08-22T12:00:00+09:00"),
+      null,
+      draftState({ running: true, runningSeconds: 7 }),
+    );
+
+    // 사라지면 레이아웃이 튀어 다른 버튼을 잘못 누르게 된다.
+    expect(content.html).toContain("AI로 채우기");
+    expect(content.html).toContain("draft-run busy");
+    expect(content.html).not.toContain(`draft-card?taskId=${task.id}`);
+  });
+
+  it("일괄 실행은 진행률을 남긴다", async () => {
+    const graph = buildGraph();
+    await graph.timers.init();
+    await graph.taskService.createTask({ title: "빈 카드", status: "doing" });
+    const content = renderTaskMenuPopover(
+      graph.timers.getTimers(),
+      [...graph.store.getState().tasks.values()],
+      new Date("2026-08-22T12:00:00+09:00"),
+      null,
+      draftState({ running: true, runningSeconds: 14, batch: { done: 1, total: 3 } }),
+    );
+    expect(content.html).toContain("2/3");
+    expect(content.html).toContain("14");
+  });
+
+  it("draft-all 액션 URL을 파싱한다", () => {
+    expect(parseTaskMenuPopoverAction("taskmaster-menu://draft-all"))
+      .toEqual({ kind: "draft-all" });
   });
 
   it("draft-card 액션 URL을 파싱한다", () => {

@@ -5,6 +5,27 @@ All notable changes to TaskMaster Obsidian plugin will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] - 2026-08-23
+
+### Added
+
+- **`✨ 모두 채우기` next to the 현재 작업 heading.** It runs the card fill over every focused card
+  that still has a blank, one at a time, and the status line shows `2/3 · 생성 중 14초` so a batch
+  that takes a few minutes is legible. It only appears when two or more cards are fillable — with
+  one card the per-card button already says everything.
+- The batch is deliberately sequential. `AiDraftService.suggest()` joins an in-flight run instead of
+  starting a second one, so firing them in parallel would read another card's suggestion and write
+  it to the wrong card. `fillCard` now refuses outright while a run is in flight, which closes the
+  same hole for double-clicks on two different cards.
+
+### Changed
+
+- The per-card button stays in place while a draft runs instead of disappearing; it just dims and
+  stops being a link. Removing it mid-run shifted everything below it, which is how you end up
+  clicking the wrong control.
+- Both buttons are smaller (9.5px, tighter padding) — they sit inside a card and should not compete
+  with the task title.
+
 ## [0.13.0] - 2026-08-23
 
 ### Changed

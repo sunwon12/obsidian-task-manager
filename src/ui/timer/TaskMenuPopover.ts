@@ -75,6 +75,7 @@ export type TaskMenuPopoverAction =
   | { kind: "select-step"; taskId: TaskId; step: number }
   | { kind: "add-step"; taskId: TaskId; value: string }
   | { kind: "draft-card"; taskId: TaskId }
+  | { kind: "draft-all" }
   | { kind: "park-task"; taskId: TaskId }
   | { kind: "start-task"; taskId: TaskId }
   | { kind: "create-task"; value: string };
@@ -105,6 +106,7 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
    */
   private reportCollapsed = true;
   private unsubscribeDrafts: (() => void) | null = null;
+  private draftBatch: { done: number; total: number } | null = null;
 
   constructor(
     private readonly timers: TaskTimerService,
@@ -275,7 +277,60 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
         ? 0
         : Math.max(0, Math.floor((now.getTime() - state.startedAt) / 1000)),
       critique: state.suggestion?.critique ?? [],
+      batch: this.draftBatch,
+      fillableCount: this.fillableTasks().length,
     };
+  }
+
+  /** 지금 채울 빈 칸이 남아 있는 집중 카드들. */
+  private fillableTasks(): Task[] {
+    const tasks = this.store.getState().tasks;
+    return this.timers.getTimers()
+      .map((timer) => tasks.get(timer.taskId) ?? null)
+      .filter((task): task is Task => task != null && !task.archivedAt && hasBlankToFill(task));
+  }
+
+  /**
+   * 카드 하나를 채운다. **비어 있는 칸만** 쓴다 — 좁은 패널에는 필드별 수락/거절 UI를
+   * 놓을 자리가 없으므로, 내가 적어 둔 값을 초안이 조용히 밀어내는 일이 없어야 한다
+   * (ADR-0012 §2).
+   */
+  private async fillCard(taskId: TaskId): Promise<void> {
+    const drafts = this.drafts;
+    // suggest()는 이미 도는 실행에 합류한다. 그 결과는 다른 카드의 것이므로
+    // 여기서 막지 않으면 엉뚱한 카드의 초안을 적어 넣는다.
+    if (!drafts || drafts.getState().status === "running") return;
+    const task = this.store.getState().tasks.get(taskId);
+    if (!task || task.archivedAt) return;
+    const projects = [...this.store.getState().projects.values()];
+    const ok = await drafts.suggest({
+      title: task.title,
+      body: task.bodySummary ?? "",
+      jiraKey: task.jiraKey,
+      // 단계가 이미 있으면 서비스가 비평 모드로 돈다 — steps는 비어서 오고 덮어쓸 일이 없다.
+      existingSteps: task.steps ?? [],
+      existingTags: task.tags ?? [],
+      existingRemarks: task.remarks,
+      projectTitles: projects.map((project) => project.title),
+      deep: true,
+    });
+    if (!ok) return;
+    const suggestion = drafts.getState().suggestion;
+    if (!suggestion) return;
+    const input: UpdateTaskInput = {};
+    if ((task.steps?.length ?? 0) === 0 && suggestion.steps.length > 0) {
+      input.steps = suggestion.steps;
+      input.currentStep = 1;
+    }
+    if (task.priority == null && suggestion.priority != null) input.priority = suggestion.priority;
+    if ((task.tags?.length ?? 0) === 0 && suggestion.tags.length > 0) input.tags = suggestion.tags;
+    if (!task.remarks && suggestion.remarks) input.remarks = suggestion.remarks;
+    if (task.project == null && suggestion.projectTitle) {
+      const matched = projects.find((project) => project.title.trim() === suggestion.projectTitle?.trim());
+      if (matched) input.project = matched.id;
+    }
+    if (Object.keys(input).length === 0) return;
+    await this.tasks.updateTask(task.id, input);
   }
 
   private async handleAction(action: TaskMenuPopoverAction): Promise<void> {
@@ -322,40 +377,26 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
           });
           return;
         }
-        case "draft-card": {
-          const task = this.store.getState().tasks.get(action.taskId);
-          if (!task || task.archivedAt) return;
-          const projects = [...this.store.getState().projects.values()];
-          const ok = await this.drafts?.suggest({
-            title: task.title,
-            body: task.bodySummary ?? "",
-            jiraKey: task.jiraKey,
-            // 단계가 이미 있으면 서비스가 비평 모드로 돈다 — steps는 비어서 오고 덮어쓸 일이 없다.
-            existingSteps: task.steps ?? [],
-            existingTags: task.tags ?? [],
-            existingRemarks: task.remarks,
-            projectTitles: projects.map((project) => project.title),
-            deep: true,
-          });
-          if (!ok) return;
-          const suggestion = this.drafts?.getState().suggestion;
-          if (!suggestion) return;
-          // 좁은 패널에는 필드별 수락/거절 UI를 놓을 자리가 없다. 그래서 **비어 있는 칸만**
-          // 채운다 — 내가 적어 둔 값을 초안이 조용히 밀어내는 일이 없어야 한다 (ADR-0012 §2).
-          const input: UpdateTaskInput = {};
-          if ((task.steps?.length ?? 0) === 0 && suggestion.steps.length > 0) {
-            input.steps = suggestion.steps;
-            input.currentStep = 1;
+        case "draft-card":
+          await this.fillCard(action.taskId);
+          return;
+        case "draft-all": {
+          const targets = this.fillableTasks();
+          if (targets.length === 0) return;
+          // 한 번에 하나씩 — 서비스가 동시 실행을 합류시키므로 병렬로 돌리면
+          // 다른 카드의 초안이 섞인다.
+          this.draftBatch = { done: 0, total: targets.length };
+          this.update();
+          try {
+            for (const target of targets) {
+              await this.fillCard(target.id);
+              if (this.draftBatch) this.draftBatch = { ...this.draftBatch, done: this.draftBatch.done + 1 };
+              this.update();
+            }
+          } finally {
+            this.draftBatch = null;
+            this.update();
           }
-          if (task.priority == null && suggestion.priority != null) input.priority = suggestion.priority;
-          if ((task.tags?.length ?? 0) === 0 && suggestion.tags.length > 0) input.tags = suggestion.tags;
-          if (!task.remarks && suggestion.remarks) input.remarks = suggestion.remarks;
-          if (task.project == null && suggestion.projectTitle) {
-            const matched = projects.find((project) => project.title.trim() === suggestion.projectTitle?.trim());
-            if (matched) input.project = matched.id;
-          }
-          if (Object.keys(input).length === 0) return;
-          await this.tasks.updateTask(task.id, input);
           return;
         }
         case "park-task": {
@@ -411,6 +452,10 @@ export interface AiDraftPanelState {
   runningSeconds: number;
   /** 단계가 이미 있는 카드에 돌리면 초안 대신 비평이 온다. 버리지 않고 보여준다. */
   critique: string[];
+  /** "모두 채우기" 진행률. null이면 배치 실행 중이 아니다. */
+  batch: { done: number; total: number } | null;
+  /** 채울 빈 칸이 남은 집중 카드 수 — 2장 이상일 때만 "모두 채우기"를 띄운다. */
+  fillableCount: number;
 }
 
 /** 모든 vault 문자열은 escape한 뒤 외부 BrowserWindow에 넣는다. */
@@ -467,6 +512,7 @@ export function renderTaskMenuPopover(
         <section class="section focus-section" data-drop="focus">
           <div class="section-heading">
             <h2>${escapeHtml(t("timer.popover.focus"))}</h2>
+            ${renderDraftAll(draft)}
             <span>${timers.length}</span>
           </div>
           ${focusHtml}
@@ -619,8 +665,10 @@ function renderFocusCard(
       </nav>
     </div>
     ${steps}
-    ${draft && !draft.running && hasBlankToFill(task)
-      ? `<a class="draft-run" href="${actionUrl("draft-card", timer.taskId)}">✨ ${escapeHtml(t("timer.popover.draftCard"))}</a>`
+    ${draft && hasBlankToFill(task)
+      ? (draft.running
+        ? `<span class="draft-run busy">✨ ${escapeHtml(t("timer.popover.draftCard"))}</span>`
+        : `<a class="draft-run" href="${actionUrl("draft-card", timer.taskId)}">✨ ${escapeHtml(t("timer.popover.draftCard"))}</a>`)
       : ""}
   </article>`;
 }
@@ -657,16 +705,29 @@ function renderStepForm(timers: TaskTimerSnapshot[], draft: AiDraftPanelState | 
   </form>`;
 }
 
+/** 채울 카드가 둘 이상일 때만 일괄 실행을 띄운다 — 한 장이면 카드 버튼으로 충분하다. */
+function renderDraftAll(draft: AiDraftPanelState | null): string {
+  if (!draft || draft.fillableCount < 2) return "";
+  if (draft.running || draft.batch) {
+    return `<span class="draft-all busy">✨</span>`;
+  }
+  return `<a class="draft-all" href="taskmaster-menu://draft-all" title="${escapeHtml(t("timer.popover.draftAll"))}">✨ ${escapeHtml(t("timer.popover.draftAll"))}</a>`;
+}
+
 /**
  * 초안 실행 상태만 담는 줄. 진입점은 카드마다 따로 있으므로 여기에는 버튼을 두지 않는다.
  * 단계가 이미 있는 카드에 돌리면 초안 대신 비평이 오는데, 안 보여주면 그대로 버려진다.
  */
 function renderDraftRow(_timers: TaskTimerSnapshot[], draft: AiDraftPanelState | null): string {
   if (!draft) return "";
-  if (draft.running) {
-    return `<div class="draft-row running">${escapeHtml(
-      t("timer.popover.draftRunning").replace("{seconds}", String(draft.runningSeconds)),
-    )}</div>`;
+  if (draft.running || draft.batch) {
+    const elapsed = t("timer.popover.draftRunning").replace("{seconds}", String(draft.runningSeconds));
+    const progress = draft.batch
+      ? `${t("timer.popover.draftBatch")
+          .replace("{done}", String(draft.batch.done + (draft.running ? 1 : 0)))
+          .replace("{total}", String(draft.batch.total))} · `
+      : "";
+    return `<div class="draft-row running">${escapeHtml(`${progress}${elapsed}`)}</div>`;
   }
   const error = draft.error
     ? `<div class="draft-row error">${escapeHtml(draft.error)}</div>`
@@ -735,7 +796,8 @@ export function parseTaskMenuPopoverAction(url: string): TaskMenuPopoverAction |
     const kind = parsed.hostname;
     if (
       kind === "close" || kind === "open-board" ||
-      kind === "run-report" || kind === "toggle-report" || kind === "open-report"
+      kind === "run-report" || kind === "toggle-report" || kind === "open-report" ||
+      kind === "draft-all"
     ) return { kind };
     if (kind === "create-task") {
       const value = parsed.searchParams.get("value") ?? "";
@@ -1244,7 +1306,11 @@ export const POPOVER_DOCUMENT = `<!doctype html>
   .draft-critique { margin: 0 0 6px; padding-left: 16px; font-size: 10.5px; color: #b6c0cc; }
   .draft-critique li { margin: 2px 0; }
   .focus-card .draft-run { display: inline-block; margin-top: 8px; }
-  .draft-run { padding: 3px 8px; border-radius: 8px; color: #9aa1ad; background: rgba(255,255,255,.06); font-weight: 650; }
+  .draft-run { padding: 2px 6px; border-radius: 6px; color: #9aa1ad; background: rgba(255,255,255,.06); font-size: 9.5px; font-weight: 650; }
+  .draft-run.busy { opacity: .45; }
+  .draft-all { flex: none; padding: 2px 6px; border-radius: 6px; color: #9aa1ad; background: rgba(255,255,255,.06); font-size: 9.5px; font-weight: 650; }
+  .draft-all:hover { color: #eaf2ff; background: rgba(117,180,255,.18); }
+  .draft-all.busy { opacity: .45; }
   .draft-run:hover { color: #eaf2ff; background: rgba(117,180,255,.18); }
 
   /* AI 리포트 — 하루 한 번 읽는 블록이라 카드 하나로 묶고 접을 수 있게 둔다. */
