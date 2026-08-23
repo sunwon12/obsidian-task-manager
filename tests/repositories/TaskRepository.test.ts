@@ -113,6 +113,27 @@ describe("TaskRepository.findAll", () => {
     expect(statuses).toEqual(["doing", "todo"]);
   });
 
+  it("reads independent task files concurrently so startup latency does not grow per file", async () => {
+    const app = new App();
+    await seedTask(app, newId("task"), "first");
+    await seedTask(app, newId("task"), "second");
+    const originalRead = app.vault.cachedRead.bind(app.vault);
+    const releases: Array<() => void> = [];
+    let started = 0;
+    vi.spyOn(app.vault, "cachedRead").mockImplementation(async (file) => {
+      started += 1;
+      await new Promise<void>((resolve) => releases.push(resolve));
+      return originalRead(file);
+    });
+    const { repo } = makeRepo(app);
+
+    const loading = repo.findAll();
+    await vi.waitFor(() => expect(started).toBe(2));
+    releases.splice(0).forEach((release) => release());
+
+    await expect(loading).resolves.toHaveLength(2);
+  });
+
   it("includes Archive folder tasks", async () => {
     const app = new App();
     const id = newId("task");
