@@ -1517,7 +1517,12 @@ export const POPOVER_DOCUMENT = `<!doctype html>
     var scrollTop = previousMain ? previousMain.scrollTop : 0;
     var scrolls = {};
     app.querySelectorAll("[data-scroll-key]").forEach(function (element) {
-      if (element.scrollLeft) scrolls[element.getAttribute("data-scroll-key")] = element.scrollLeft;
+      if (element.scrollLeft || element.scrollTop) {
+        scrolls[element.getAttribute("data-scroll-key")] = {
+          left: element.scrollLeft,
+          top: element.scrollTop
+        };
+      }
     });
     var values = {};
     app.querySelectorAll("[data-preserve]").forEach(function (element) {
@@ -1529,8 +1534,10 @@ export const POPOVER_DOCUMENT = `<!doctype html>
     app.innerHTML = html;
     var nextMain = app.querySelector("main");
     app.querySelectorAll("[data-scroll-key]").forEach(function (element) {
-      var scrollLeft = scrolls[element.getAttribute("data-scroll-key")];
-      if (scrollLeft) element.scrollLeft = scrollLeft;
+      var scroll = scrolls[element.getAttribute("data-scroll-key")];
+      if (!scroll) return;
+      element.scrollLeft = scroll.left;
+      element.scrollTop = scroll.top;
     });
     app.querySelectorAll("[data-preserve]").forEach(function (element) {
       var key = element.getAttribute("data-preserve");

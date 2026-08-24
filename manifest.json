@@ -1,7 +1,7 @@
 {
   "id": "taskmaster-plugin",
   "name": "TaskMaster",
-  "version": "0.17.0",
+  "version": "0.17.1",
   "minAppVersion": "1.5.0",
   "description": "Local-first task and meeting management with React Kanban inside Obsidian. All data stays in your Vault as Markdown.",
   "author": "TaskMaster Team",

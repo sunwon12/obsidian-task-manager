@@ -391,7 +391,7 @@ describe("TaskMenuPopover — 메뉴바 빠른 작업 패널", () => {
     }
   });
 
-  it("고정 높이 스크롤 영역을 만들고 1초 갱신 뒤에도 스크롤 위치를 보존한다", () => {
+  it("고정 높이 스크롤 영역을 만들고 1초 갱신 뒤에도 내부 스크롤 위치를 보존한다", () => {
     const created: FakeBrowserWindow[] = [];
     let loadedUrl = "";
     class FakeBrowserWindow {
@@ -432,6 +432,9 @@ describe("TaskMenuPopover — 메뉴바 빠른 작업 패널", () => {
       expect(documentHtml).toContain("html, body, #app { width: 100%; height: 100%");
       expect(documentHtml).toContain("var scrollTop = previousMain ? previousMain.scrollTop : 0");
       expect(documentHtml).toContain("nextMain.scrollTop = scrollTop");
+      expect(documentHtml).toContain("if (element.scrollLeft || element.scrollTop)");
+      expect(documentHtml).toContain("top: element.scrollTop");
+      expect(documentHtml).toContain("element.scrollTop = scroll.top");
       expect(documentHtml).toContain("overscroll-behavior: contain");
     } finally {
       if (originalRequire) target.require = originalRequire;
