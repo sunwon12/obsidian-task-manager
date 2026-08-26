@@ -5,6 +5,21 @@ All notable changes to TaskMaster Obsidian plugin will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.0] - 2026-08-26
+
+### Added
+
+- Focus-card steps in the quick panel can now be dragged into a new order. Reordering moves each
+  step's accumulated time and the active-step pointer with the step, including while its timer is
+  running.
+- Every focus card now has its own `+` button. It opens an inline step input for that card, instead
+  of putting one shared input below the entire focus list.
+
+### Note
+
+The quick panel replaces its HTML every second while a timer runs. Step dragging uses the same
+deferred-render contract as card dragging, so a timer tick cannot remove the node being dragged.
+
 ## [0.17.1] - 2026-08-24
 
 ### Fixed

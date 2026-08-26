@@ -74,6 +74,8 @@ export type TaskMenuPopoverAction =
   | { kind: "close" | "open-board" | "run-report" | "toggle-report" | "open-report" }
   | { kind: "start" | "pause" | "stop"; taskId: TaskId }
   | { kind: "select-step"; taskId: TaskId; step: number }
+  | { kind: "move-step"; taskId: TaskId; from: number; to: number }
+  | { kind: "toggle-step-form"; taskId: TaskId }
   | { kind: "add-step"; taskId: TaskId; value: string }
   | { kind: "draft-card"; taskId: TaskId }
   | { kind: "draft-all" }
@@ -113,6 +115,8 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
   private draftBatch: { done: number; total: number } | null = null;
   /** 메모 입력창이 열린 카드. 한 번에 하나만 연다. */
   private memoTaskId: TaskId | null = null;
+  /** 단계 추가 입력창이 열린 카드. 카드의 + 버튼으로 한 번에 하나만 연다. */
+  private stepFormTaskId: TaskId | null = null;
   /** 열린 카드의 지난 메모. 본문은 store에 없어 열 때 한 번 읽는다. */
   private memoEntries: MemoEntry[] = [];
 
@@ -246,6 +250,7 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
       this.draftPanelState(now),
       this.memoTaskId,
       this.memoEntries,
+      this.stepFormTaskId,
     );
     this.handle.setContent(content.html, content.height);
   }
@@ -390,6 +395,13 @@ export class TaskMenuPopover implements TaskMenuPopoverController {
         case "select-step":
           await this.timers.selectStep(action.taskId, action.step);
           return;
+        case "move-step":
+          await this.timers.moveStep(action.taskId, action.from, action.to);
+          return;
+        case "toggle-step-form":
+          this.stepFormTaskId = this.stepFormTaskId === action.taskId ? null : action.taskId;
+          this.update();
+          return;
         case "add-step": {
           const value = normalizeInput(action.value);
           const task = this.store.getState().tasks.get(action.taskId);
@@ -517,6 +529,7 @@ export function renderTaskMenuPopover(
   draft: AiDraftPanelState | null = null,
   memoTaskId: TaskId | null = null,
   memoEntries: readonly MemoEntry[] = [],
+  stepFormTaskId: TaskId | null = null,
 ): TaskMenuPopoverContent {
   const activeTaskIds = new Set(timers.map((timer) => timer.taskId));
   const nextTasks = tasks
@@ -539,6 +552,7 @@ export function renderTaskMenuPopover(
         draft,
         memoTaskId === timer.taskId,
         memoEntries,
+        stepFormTaskId === timer.taskId,
       )).join("")
     : `<div class="empty-state">
         <span class="empty-mark">✓</span>
@@ -548,12 +562,12 @@ export function renderTaskMenuPopover(
   const nextHtml = nextTasks.length > 0
     ? nextTasks.map(renderNextTask).join("")
     : `<div class="list-empty">${escapeHtml(t("timer.popover.noNext"))}</div>`;
-  const stepForm = timers.length > 0 ? renderStepForm(timers, draft) : "";
+  const draftRow = timers.length > 0 ? renderDraftRow(timers, draft) : "";
   const rowCount = timers.reduce((sum, timer) => sum + Math.max(1, timer.steps.length), 0);
   const reportSection = report ? renderAiReportSection(report) : { html: "", height: 0 };
   const estimatedHeight =
     250 + timers.length * 94 + rowCount * 35 + nextTasks.length * 48 + reportSection.height
-    + (memoTaskId != null ? 128 : 0);
+    + (memoTaskId != null ? 128 : 0) + (stepFormTaskId != null ? 45 : 0);
 
   return {
     html: `<div class="panel-shell">
@@ -575,7 +589,7 @@ export function renderTaskMenuPopover(
             <span>${timers.length}</span>
           </div>
           ${focusHtml}
-          ${stepForm}
+          ${draftRow}
         </section>
 
         <section class="section next-section" data-drop="next">
@@ -700,6 +714,7 @@ function renderFocusCard(
   draft: AiDraftPanelState | null,
   memoOpen: boolean,
   memoEntries: readonly MemoEntry[],
+  stepFormOpen: boolean,
 ): string {
   const phaseClass = timer.phase === "running" ? "running" : timer.phase === "paused" ? "paused" : "idle";
   const phaseLabel = timer.phase === "running"
@@ -727,6 +742,7 @@ function renderFocusCard(
     </div>
     ${steps}
     <div class="card-actions">
+      <a class="step-add${stepFormOpen ? " open" : ""}" href="${actionUrl("toggle-step-form", timer.taskId)}" title="${escapeHtml(t("timer.popover.addStep"))}" aria-label="${escapeHtml(t("timer.popover.addStep"))}">＋</a>
       ${draft && hasBlankToFill(task)
         ? (draft.running
           ? `<span class="draft-run busy">✨ ${escapeHtml(t("timer.popover.draftCard"))}</span>`
@@ -734,6 +750,7 @@ function renderFocusCard(
         : ""}
       <a class="memo-toggle${memoOpen ? " open" : ""}" href="${actionUrl("toggle-memo", timer.taskId)}">✎ ${escapeHtml(t("timer.popover.memo"))}</a>
     </div>
+    ${stepFormOpen ? renderStepForm(timer.taskId) : ""}
     ${memoOpen ? renderMemoForm(timer.taskId, memoEntries) : ""}
   </article>`;
 }
@@ -748,8 +765,9 @@ function renderStep(timer: TaskTimerSnapshot, value: string, index: number): str
         ? "current"
         : "pending";
   const mark = state === "completed" ? "✓" : state === "current" ? "●" : String(number);
-  return `<li>
-    <a class="step-row ${state}" href="${actionUrl("select-step", timer.taskId, { step: number })}">
+  return `<li class="step-item" draggable="true" data-drag="step" data-task-id="${escapeHtml(timer.taskId)}" data-step="${number}">
+    <a class="step-row ${state}" draggable="false" href="${actionUrl("select-step", timer.taskId, { step: number })}">
+      <span class="step-grip" aria-hidden="true">⠿</span>
       <span class="step-mark">${mark}</span>
       <span class="step-label scroll-title" data-scroll-key="step:${escapeHtml(timer.taskId)}:${number}" title="${escapeHtml(value)}">${escapeHtml(value)}</span>
       <span class="step-time">${formatElapsed(timer.stepElapsedMs[index] ?? 0)}</span>
@@ -775,15 +793,10 @@ function renderMemoForm(taskId: TaskId, entries: readonly MemoEntry[]): string {
   </form>`;
 }
 
-function renderStepForm(timers: TaskTimerSnapshot[], draft: AiDraftPanelState | null): string {
-  const options = timers.map((timer) =>
-    `<option value="${escapeHtml(timer.taskId)}">${escapeHtml(truncate(timer.title, 34))}</option>`,
-  ).join("");
-  return `${renderDraftRow(timers, draft)}<form class="quick-form step-form" data-action="taskmaster-menu://add-step">
-    ${timers.length > 1
-      ? `<select data-preserve="step-task" name="taskId" aria-label="${escapeHtml(t("timer.popover.chooseTask"))}">${options}</select>`
-      : `<input type="hidden" name="taskId" value="${escapeHtml(timers[0]?.taskId ?? "")}">`}
-    <input data-preserve="new-step" name="value" maxlength="240" autocomplete="off" autofocus placeholder="${escapeHtml(t("timer.popover.stepPlaceholder"))}" aria-label="${escapeHtml(t("timer.popover.stepPlaceholder"))}">
+function renderStepForm(taskId: TaskId): string {
+  return `<form class="quick-form step-form" data-action="taskmaster-menu://add-step">
+    <input type="hidden" name="taskId" value="${escapeHtml(taskId)}">
+    <input data-preserve="new-step:${escapeHtml(taskId)}" name="value" maxlength="240" autocomplete="off" autofocus placeholder="${escapeHtml(t("timer.popover.stepPlaceholder"))}" aria-label="${escapeHtml(t("timer.popover.stepPlaceholder"))}">
     <button type="submit" aria-label="${escapeHtml(t("timer.popover.addStep"))}">＋</button>
   </form>`;
 }
@@ -889,12 +902,19 @@ export function parseTaskMenuPopoverAction(url: string): TaskMenuPopoverAction |
     }
     const taskId = parsed.searchParams.get("taskId") as TaskId | null;
     if (!taskId) return null;
-    if (["start", "pause", "stop", "start-task", "draft-card", "park-task", "open-task", "toggle-memo"].includes(kind)) {
-      return { kind: kind as "start" | "pause" | "stop" | "start-task" | "draft-card" | "park-task" | "open-task" | "toggle-memo", taskId };
+    if (["start", "pause", "stop", "start-task", "draft-card", "park-task", "open-task", "toggle-memo", "toggle-step-form"].includes(kind)) {
+      return { kind: kind as "start" | "pause" | "stop" | "start-task" | "draft-card" | "park-task" | "open-task" | "toggle-memo" | "toggle-step-form", taskId };
     }
     if (kind === "select-step") {
       const step = Number(parsed.searchParams.get("step"));
       return Number.isInteger(step) && step > 0 ? { kind, taskId, step } : null;
+    }
+    if (kind === "move-step") {
+      const from = Number(parsed.searchParams.get("from"));
+      const to = Number(parsed.searchParams.get("to"));
+      return Number.isInteger(from) && from > 0 && Number.isInteger(to) && to > 0
+        ? { kind, taskId, from, to }
+        : null;
     }
     if (kind === "save-memo") {
       const value = parsed.searchParams.get("value") ?? "";
@@ -1384,9 +1404,10 @@ export const POPOVER_DOCUMENT = `<!doctype html>
   .section-heading span { color: #7f8590; font-size: 11px; font-variant-numeric: tabular-nums; }
   /* 카드 하단 액션 줄과 메모 입력창. */
   .card-actions { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
-  .memo-toggle { padding: 2px 6px; border-radius: 6px; color: #9aa1ad; background: rgba(255,255,255,.06); font-size: 9.5px; font-weight: 650; }
-  .memo-toggle:hover { color: #eaf2ff; background: rgba(117,180,255,.18); }
-  .memo-toggle.open { color: #10151b; background: #74b5fa; }
+  .memo-toggle, .step-add { padding: 2px 6px; border-radius: 6px; color: #9aa1ad; background: rgba(255,255,255,.06); font-size: 9.5px; font-weight: 650; }
+  .memo-toggle:hover, .step-add:hover { color: #eaf2ff; background: rgba(117,180,255,.18); }
+  .memo-toggle.open, .step-add.open { color: #10151b; background: #74b5fa; }
+  .step-add { display: grid; place-items: center; width: 22px; height: 19px; padding: 0; font-size: 14px; line-height: 1; }
   .memo-history { margin: 8px 0 0; padding: 6px 8px; max-height: 132px; overflow-y: auto; list-style: none; border-radius: 9px; background: rgba(255,255,255,.04); }
   .memo-history li { display: flex; gap: 7px; padding: 3px 0; font-size: 10.5px; line-height: 1.45; }
   .memo-history li + li { border-top: 1px solid rgba(255,255,255,.06); }
@@ -1464,12 +1485,17 @@ export const POPOVER_DOCUMENT = `<!doctype html>
   .focus-controls .stop { color: #b3b7bf; background: rgba(255,255,255,.06); font-size: 8px; }
   .step-list { margin: 10px 0 0; padding: 8px 0 0; border-top: 1px solid rgba(255,255,255,.07); list-style: none; }
   .step-list li + li { margin-top: 3px; }
+  .step-item { cursor: grab; }
+  .step-item:active { cursor: grabbing; }
   .step-row { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 28px; padding: 4px 7px; border-radius: 8px; color: #aeb3bd; font-size: 11.5px; }
   .step-row:hover { color: #ecf4ff; background: rgba(117,180,255,.09); }
+  .step-item.drop-target .step-row { outline: 1px dashed rgba(117,180,255,.75); outline-offset: -1px; background: rgba(117,180,255,.12); }
   .step-row.current { color: #f6f9fd; background: rgba(117,180,255,.16); font-weight: 650; }
   .step-row.completed { color: #6f7580; }
   .step-row.completed .step-label { text-decoration: line-through; }
   .step-mark { width: 15px; flex: none; color: #7bbcff; text-align: center; font-size: 9px; }
+  .step-grip { width: 7px; flex: none; color: #616875; font-size: 11px; line-height: 1; }
+  .step-row:hover .step-grip { color: #9ba4b2; }
   .completed .step-mark { color: #737a85; font-size: 12px; }
   .step-label { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .step-time { flex: none; color: #6f7580; font-size: 10px; font-variant-numeric: tabular-nums; }
@@ -1597,7 +1623,11 @@ export const POPOVER_DOCUMENT = `<!doctype html>
   document.addEventListener("dragstart", function (event) {
     var source = event.target instanceof Element ? event.target.closest("[data-drag]") : null;
     if (!source) return;
-    dragging = { id: source.getAttribute("data-task-id"), from: source.getAttribute("data-drag") };
+    dragging = {
+      id: source.getAttribute("data-task-id"),
+      from: source.getAttribute("data-drag"),
+      step: source.getAttribute("data-step")
+    };
     source.classList.add("dragging");
     if (event.dataTransfer) {
       event.dataTransfer.effectAllowed = "move";
@@ -1611,6 +1641,15 @@ export const POPOVER_DOCUMENT = `<!doctype html>
   });
   document.addEventListener("dragover", function (event) {
     if (!dragging) return;
+    if (dragging.from === "step") {
+      var stepTarget = event.target instanceof Element ? event.target.closest("[data-step]") : null;
+      if (!stepTarget || stepTarget.getAttribute("data-task-id") !== dragging.id || stepTarget.getAttribute("data-step") === dragging.step) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      document.querySelectorAll(".step-item.drop-target").forEach(function (item) { item.classList.remove("drop-target"); });
+      stepTarget.classList.add("drop-target");
+      return;
+    }
     var zone = dropZoneOf(event.target);
     if (!zone || zone.getAttribute("data-drop") === dragging.from) return;
     event.preventDefault();
@@ -1618,11 +1657,26 @@ export const POPOVER_DOCUMENT = `<!doctype html>
     zone.classList.add("drop-target");
   });
   document.addEventListener("dragleave", function (event) {
-    var zone = dropZoneOf(event.target);
+    var zone = dragging && dragging.from === "step"
+      ? (event.target instanceof Element ? event.target.closest("[data-step]") : null)
+      : dropZoneOf(event.target);
     if (zone && !zone.contains(event.relatedTarget)) zone.classList.remove("drop-target");
   });
   document.addEventListener("drop", function (event) {
     if (!dragging) return;
+    if (dragging.from === "step") {
+      var stepTarget = event.target instanceof Element ? event.target.closest("[data-step]") : null;
+      if (!stepTarget || stepTarget.getAttribute("data-task-id") !== dragging.id) return;
+      var targetStep = stepTarget.getAttribute("data-step");
+      if (!targetStep || targetStep === dragging.step) return;
+      event.preventDefault();
+      var stepTaskId = dragging.id;
+      var sourceStep = dragging.step;
+      dragging = null;
+      clearDropHints();
+      dispatch("taskmaster-menu://move-step?taskId=" + encodeURIComponent(stepTaskId) + "&from=" + encodeURIComponent(sourceStep) + "&to=" + encodeURIComponent(targetStep));
+      return;
+    }
     var zone = dropZoneOf(event.target);
     if (!zone) return;
     var to = zone.getAttribute("data-drop");

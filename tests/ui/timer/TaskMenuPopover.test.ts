@@ -117,7 +117,8 @@ describe("TaskMenuPopover — 메뉴바 빠른 작업 패널", () => {
     );
 
     expect(content.html).toContain("오늘");
-    expect(content.html).toContain("현재 작업에 단계 추가");
+    expect(content.html).toContain(`taskmaster-menu://toggle-step-form?taskId=${focus.id}`);
+    expect(content.html).toContain(`data-drag="step" data-task-id="${focus.id}" data-step="1"`);
     expect(content.html).toContain("빠른 할 일 추가");
     expect(content.html).toContain("다음 작업");
     expect(content.html).toContain("08-23");
@@ -191,6 +192,10 @@ describe("TaskMenuPopover — 메뉴바 빠른 작업 패널", () => {
       .toEqual({ kind: "add-step", taskId: "task_x", value: "QA 확인" });
     expect(parseTaskMenuPopoverAction("taskmaster-menu://select-step?taskId=task_x&step=2"))
       .toEqual({ kind: "select-step", taskId: "task_x", step: 2 });
+    expect(parseTaskMenuPopoverAction("taskmaster-menu://move-step?taskId=task_x&from=3&to=1"))
+      .toEqual({ kind: "move-step", taskId: "task_x", from: 3, to: 1 });
+    expect(parseTaskMenuPopoverAction("taskmaster-menu://toggle-step-form?taskId=task_x"))
+      .toEqual({ kind: "toggle-step-form", taskId: "task_x" });
     expect(parseTaskMenuPopoverAction("taskmaster-menu://create-task?value=%EC%83%88%20%EC%9E%91%EC%97%85"))
       .toEqual({ kind: "create-task", value: "새 작업" });
     expect(parseTaskMenuPopoverAction("https://example.com")).toBeNull();
@@ -228,9 +233,17 @@ describe("TaskMenuPopover — 메뉴바 빠른 작업 패널", () => {
     expect(popover.toggle({ x: 100, y: 0, width: 24, height: 24 })).toBe(true);
     expect(handle.html).toContain("집중");
 
+    dispatch({ kind: "toggle-step-form", taskId: focus.id });
+    expect(handle.html).toContain("현재 작업에 단계 추가");
+
     dispatch({ kind: "add-step", taskId: focus.id, value: "  QA   확인  " });
     await vi.waitFor(() => {
       expect(graph.store.getState().tasks.get(focus.id)?.steps).toEqual(["분석", "QA 확인"]);
+    });
+
+    dispatch({ kind: "move-step", taskId: focus.id, from: 2, to: 1 });
+    await vi.waitFor(() => {
+      expect(graph.store.getState().tasks.get(focus.id)?.steps).toEqual(["QA 확인", "분석"]);
     });
 
     dispatch({ kind: "create-task", value: "새 할 일" });
@@ -875,6 +888,7 @@ describe("TaskMenuPopover — 현재 작업 ↔ 다음 할 일 드래그", () =>
     // 빠지면 타이머가 도는 동안 드래그가 매 초 끊기고, 그 실패는 테스트로만 잡힌다.
     expect(POPOVER_DOCUMENT).toContain("if (dragging) { pendingHtml = html; return; }");
     expect(POPOVER_DOCUMENT).toContain('var kind = to === "focus" ? "start-task" : "park-task";');
+    expect(POPOVER_DOCUMENT).toContain("taskmaster-menu://move-step?taskId=");
   });
 });
 

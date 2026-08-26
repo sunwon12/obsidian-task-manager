@@ -294,6 +294,28 @@ describe("TaskTimerService — 단계별 시간 측정·저장", () => {
     s.tick(2_000);
     expect(s.timers.getTimer(task.id)?.elapsedMs).toBe(8_000);
   });
+
+  it("[R10g] 단계 순서를 바꾸면 현재 단계와 누적 시간도 같은 항목을 따라 이동한다", async () => {
+    const s = await setup();
+    const task = await s.taskService.createTask({
+      title: "단계 재정렬",
+      status: "doing",
+      steps: ["DDL", "구현", "검증"],
+      currentStep: 2,
+    });
+    s.timers.start(task.id);
+    s.tick(5_000);
+
+    await s.timers.moveStep(task.id, 2, 3);
+
+    expect(s.store.getState().tasks.get(task.id)).toMatchObject({
+      steps: ["DDL", "검증", "구현"],
+      currentStep: 3,
+      stepSeconds: [0, 0, 5],
+    });
+    s.tick(2_000);
+    expect(s.timers.getTimer(task.id)?.stepElapsedMs).toEqual([0, 0, 7_000]);
+  });
 });
 
 describe("TaskTimerService — 스탑 버튼", () => {

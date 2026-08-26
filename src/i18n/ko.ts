@@ -248,7 +248,7 @@ const ko = {
   "timer.popover.running": "집중 중",
   "timer.popover.paused": "잠시 멈춤",
   "timer.popover.ready": "시작 대기",
-  "timer.popover.firstStepHint": "첫 단계를 아래에서 바로 추가해보세요.",
+  "timer.popover.firstStepHint": "+를 눌러 첫 단계를 추가해보세요.",
   "timer.popover.stepPlaceholder": "현재 작업에 단계 추가",
   "timer.popover.taskPlaceholder": "빠른 할 일 추가",
   "timer.popover.chooseTask": "단계를 추가할 작업",

@@ -276,6 +276,54 @@ export class TaskTimerService {
   }
 
   /**
+   * 단계 순서를 바꾸되 단계별 누적 시간과 현재 단계도 같은 항목을 따라 이동시킨다.
+   * 실행 중이면 드래그 시점까지의 시간을 먼저 확정한 뒤 새 위치에서 이어서 센다.
+   */
+  async moveStep(taskId: TaskId, fromStep: number, toStep: number): Promise<void> {
+    const timer = this.timers.get(taskId);
+    const task = this.store.getState().tasks.get(taskId);
+    const steps = task?.steps ?? [];
+    if (
+      !timer || !task ||
+      !Number.isInteger(fromStep) || !Number.isInteger(toStep) ||
+      fromStep < 1 || fromStep > steps.length ||
+      toStep < 1 || toStep > steps.length ||
+      fromStep === toStep
+    ) return;
+
+    const now = this.now();
+    if (timer.phase === "running") this.captureActiveStep(timer, now);
+    timer.stepAccumulatedMs = mergeStepMs(
+      normalizeStepMs(timer.stepAccumulatedMs, steps.length),
+      normalizeStepMs(task.stepSeconds?.map((seconds) => seconds * 1000), steps.length),
+    );
+
+    const previousTimer = {
+      stepAccumulatedMs: [...timer.stepAccumulatedMs],
+      activeStep: timer.activeStep,
+      stepRunningSince: timer.stepRunningSince,
+    };
+    const nextSteps = moveArrayItem(steps, fromStep - 1, toStep - 1);
+    timer.stepAccumulatedMs = moveArrayItem(timer.stepAccumulatedMs, fromStep - 1, toStep - 1);
+    timer.activeStep = moveStepNumber(timer.activeStep, fromStep, toStep);
+    timer.stepRunningSince = timer.phase === "running" && timer.activeStep != null ? now : null;
+    const currentStep = moveStepNumber(task.currentStep, fromStep, toStep);
+    const stepSeconds = timer.stepAccumulatedMs.map((ms) => ms <= 0 ? 0 : Math.max(1, Math.round(ms / 1000)));
+
+    this.persist();
+    try {
+      await this.tasks.updateTask(taskId, { steps: nextSteps, currentStep, stepSeconds });
+    } catch (err) {
+      timer.stepAccumulatedMs = previousTimer.stepAccumulatedMs;
+      timer.activeStep = previousTimer.activeStep;
+      timer.stepRunningSince = timer.phase === "running" && timer.activeStep != null ? now : null;
+      this.notify();
+      this.persist();
+      throw err;
+    }
+  }
+
+  /**
    * 추적 종료 + 측정 시간을 MD로 환산해 actualMd에 기록(기존 값에 합산)
    * + 태스크를 done으로 이동 + 타이머 제거. 측정 0이면 actualMd 미변경.
    */
@@ -554,4 +602,24 @@ function mergeStepMs(a: readonly number[], b: readonly number[]): number[] {
   return Array.from({ length: Math.max(a.length, b.length) }, (_, index) =>
     Math.max(a[index] ?? 0, b[index] ?? 0),
   );
+}
+
+function moveArrayItem<T>(values: readonly T[], fromIndex: number, toIndex: number): T[] {
+  const next = [...values];
+  const [moved] = next.splice(fromIndex, 1);
+  if (moved === undefined) return next;
+  next.splice(toIndex, 0, moved);
+  return next;
+}
+
+function moveStepNumber(
+  value: number | null | undefined,
+  fromStep: number,
+  toStep: number,
+): number | null {
+  if (value == null) return null;
+  if (value === fromStep) return toStep;
+  if (fromStep < toStep && value > fromStep && value <= toStep) return value - 1;
+  if (toStep < fromStep && value >= toStep && value < fromStep) return value + 1;
+  return value;
 }

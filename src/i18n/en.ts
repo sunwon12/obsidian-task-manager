@@ -250,7 +250,7 @@ const en: Record<keyof typeof ko, string> = {
   "timer.popover.running": "Focusing",
   "timer.popover.paused": "Paused",
   "timer.popover.ready": "Ready",
-  "timer.popover.firstStepHint": "Add the first step right below.",
+  "timer.popover.firstStepHint": "Press + to add the first step.",
   "timer.popover.stepPlaceholder": "Add a step to the current task",
   "timer.popover.taskPlaceholder": "Quick add a task",
   "timer.popover.chooseTask": "Task for this step",
