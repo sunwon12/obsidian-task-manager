@@ -5,6 +5,14 @@ All notable changes to TaskMaster Obsidian plugin will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.1] - 2026-08-26
+
+### Fixed
+
+- The per-card step control now says `+ Add step` instead of appearing as a tiny low-contrast
+  square, and the drag grip is brighter. Both controls were present in 0.18.0 but too easy to miss
+  against the dark quick-panel card.
+
 ## [0.18.0] - 2026-08-26
 
 ### Added

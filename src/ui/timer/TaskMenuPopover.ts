@@ -742,7 +742,7 @@ function renderFocusCard(
     </div>
     ${steps}
     <div class="card-actions">
-      <a class="step-add${stepFormOpen ? " open" : ""}" href="${actionUrl("toggle-step-form", timer.taskId)}" title="${escapeHtml(t("timer.popover.addStep"))}" aria-label="${escapeHtml(t("timer.popover.addStep"))}">＋</a>
+      <a class="step-add${stepFormOpen ? " open" : ""}" href="${actionUrl("toggle-step-form", timer.taskId)}" title="${escapeHtml(t("timer.popover.addStep"))}" aria-label="${escapeHtml(t("timer.popover.addStep"))}">＋ ${escapeHtml(t("timer.popover.addStep"))}</a>
       ${draft && hasBlankToFill(task)
         ? (draft.running
           ? `<span class="draft-run busy">✨ ${escapeHtml(t("timer.popover.draftCard"))}</span>`
@@ -1407,7 +1407,7 @@ export const POPOVER_DOCUMENT = `<!doctype html>
   .memo-toggle, .step-add { padding: 2px 6px; border-radius: 6px; color: #9aa1ad; background: rgba(255,255,255,.06); font-size: 9.5px; font-weight: 650; }
   .memo-toggle:hover, .step-add:hover { color: #eaf2ff; background: rgba(117,180,255,.18); }
   .memo-toggle.open, .step-add.open { color: #10151b; background: #74b5fa; }
-  .step-add { display: grid; place-items: center; width: 22px; height: 19px; padding: 0; font-size: 14px; line-height: 1; }
+  .step-add { display: inline-flex; align-items: center; height: 21px; padding: 0 7px; color: #b9c7d8; background: rgba(117,180,255,.12); font-size: 9.5px; line-height: 1; }
   .memo-history { margin: 8px 0 0; padding: 6px 8px; max-height: 132px; overflow-y: auto; list-style: none; border-radius: 9px; background: rgba(255,255,255,.04); }
   .memo-history li { display: flex; gap: 7px; padding: 3px 0; font-size: 10.5px; line-height: 1.45; }
   .memo-history li + li { border-top: 1px solid rgba(255,255,255,.06); }
@@ -1494,8 +1494,8 @@ export const POPOVER_DOCUMENT = `<!doctype html>
   .step-row.completed { color: #6f7580; }
   .step-row.completed .step-label { text-decoration: line-through; }
   .step-mark { width: 15px; flex: none; color: #7bbcff; text-align: center; font-size: 9px; }
-  .step-grip { width: 7px; flex: none; color: #616875; font-size: 11px; line-height: 1; }
-  .step-row:hover .step-grip { color: #9ba4b2; }
+  .step-grip { width: 9px; flex: none; color: #929cab; font-size: 12px; line-height: 1; }
+  .step-row:hover .step-grip { color: #d8e4f2; }
   .completed .step-mark { color: #737a85; font-size: 12px; }
   .step-label { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .step-time { flex: none; color: #6f7580; font-size: 10px; font-variant-numeric: tabular-nums; }

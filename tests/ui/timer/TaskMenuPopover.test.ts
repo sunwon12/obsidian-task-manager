@@ -119,6 +119,7 @@ describe("TaskMenuPopover — 메뉴바 빠른 작업 패널", () => {
     expect(content.html).toContain("오늘");
     expect(content.html).toContain(`taskmaster-menu://toggle-step-form?taskId=${focus.id}`);
     expect(content.html).toContain(`data-drag="step" data-task-id="${focus.id}" data-step="1"`);
+    expect(content.html).toContain("＋ 단계 추가");
     expect(content.html).toContain("빠른 할 일 추가");
     expect(content.html).toContain("다음 작업");
     expect(content.html).toContain("08-23");
