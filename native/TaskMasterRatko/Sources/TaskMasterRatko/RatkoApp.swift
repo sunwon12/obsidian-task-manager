@@ -21,7 +21,7 @@ struct TaskMasterRatkoApp: App {
         MenuBarExtra {
             RatkoPanel(store: store)
         } label: {
-            RatkoIconView(kind: .menuBar, size: 18)
+            RatkoIconView(kind: .menuBar, size: 14)
                 .accessibilityLabel("TaskMaster 랏코")
         }
         .menuBarExtraStyle(.window)

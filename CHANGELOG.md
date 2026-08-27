@@ -16,8 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an update cannot leave the previous binary running until the next login.
 - Replaced the temporary otter emoji in the Swift menu bar and panel header with TaskMaster's
   original full-color Ratko artwork, packaged from the existing `src/assets` files.
-- Sized the menu-bar artwork to the largest unclipped macOS content height (18 points); the
-  previous 22-point SwiftUI frame touched the menu-bar bounds and cropped Ratko's head and feet.
+- Sized the visually dense, full-color menu-bar artwork to 14 points so it matches the perceived
+  size of neighboring line icons such as Wi-Fi. The earlier 22-point frame cropped Ratko, while
+  even the uncropped 18-point frame still looked oversized because the artwork fills its square.
 - Restored the AI feedback section in the Swift quick panel. It parses the newest section of the
   existing daily-feedback Markdown, shows the highlight while collapsed and the complete feedback
   when expanded, opens the source note, and can run the existing `daily-schedule-feedback` skill
