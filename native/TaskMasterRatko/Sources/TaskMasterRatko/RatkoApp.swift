@@ -108,27 +108,41 @@ private final class RatkoDragAutoScroller: ObservableObject {
     }
 }
 
-private final class RatkoDragReleaseMonitor: ObservableObject {
-    private var timer: Timer?
+final class RatkoDragReleaseMonitor: ObservableObject {
+    private var localMonitor: Any?
+    private var globalMonitor: Any?
     private var onRelease: (() -> Void)?
+
+    var isMonitoring: Bool { localMonitor != nil || globalMonitor != nil }
 
     func start(onRelease: @escaping () -> Void) {
         self.onRelease = onRelease
-        guard timer == nil else { return }
-        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
-            guard NSEvent.pressedMouseButtons & 1 == 0 else { return }
-            let callback = self?.onRelease
-            self?.stop()
-            callback?()
+        guard localMonitor == nil, globalMonitor == nil else { return }
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
+            self?.finish()
+            return event
         }
-        self.timer = timer
-        RunLoop.main.add(timer, forMode: .common)
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in
+            self?.finish()
+        }
     }
 
     func stop() {
-        timer?.invalidate()
-        timer = nil
+        if let localMonitor { NSEvent.removeMonitor(localMonitor) }
+        if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
+        localMonitor = nil
+        globalMonitor = nil
         onRelease = nil
+    }
+
+    private func finish() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.finish() }
+            return
+        }
+        guard let callback = onRelease else { return }
+        stop()
+        callback()
     }
 }
 

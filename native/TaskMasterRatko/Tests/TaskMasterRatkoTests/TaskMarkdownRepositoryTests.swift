@@ -136,6 +136,18 @@ final class TaskMarkdownRepositoryTests: XCTestCase {
         XCTAssertTrue(resolved === taskScrollView)
     }
 
+    @MainActor
+    func testTaskDragReleaseMonitorDoesNotClearWhileWaitingForMouseUp() {
+        let monitor = RatkoDragReleaseMonitor()
+        var released = false
+        monitor.start { released = true }
+
+        RunLoop.main.run(until: Date().addingTimeInterval(0.08))
+        XCTAssertFalse(released)
+        XCTAssertTrue(monitor.isMonitoring)
+        monitor.stop()
+    }
+
     func testCreatesPluginCompatibleTaskIdAndMarkdown() throws {
         let task = try repository.createTask(title: "새 작업")
         XCTAssertNotNil(task.id.range(of: "^task_[0-9A-HJKMNP-TV-Z]{26}$", options: .regularExpression))
