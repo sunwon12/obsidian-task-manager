@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 enum RatkoPanelSizing {
     static let minimumHeight = 360.0
@@ -108,44 +107,6 @@ private final class RatkoDragAutoScroller: ObservableObject {
     }
 }
 
-final class RatkoDragReleaseMonitor: ObservableObject {
-    private var localMonitor: Any?
-    private var globalMonitor: Any?
-    private var onRelease: (() -> Void)?
-
-    var isMonitoring: Bool { localMonitor != nil || globalMonitor != nil }
-
-    func start(onRelease: @escaping () -> Void) {
-        self.onRelease = onRelease
-        guard localMonitor == nil, globalMonitor == nil else { return }
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
-            self?.finish()
-            return event
-        }
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in
-            self?.finish()
-        }
-    }
-
-    func stop() {
-        if let localMonitor { NSEvent.removeMonitor(localMonitor) }
-        if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
-        localMonitor = nil
-        globalMonitor = nil
-        onRelease = nil
-    }
-
-    private func finish() {
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in self?.finish() }
-            return
-        }
-        guard let callback = onRelease else { return }
-        stop()
-        callback()
-    }
-}
-
 enum RatkoScrollViewLookup {
     static func largestContaining(pointInWindow: NSPoint, root: NSView) -> NSScrollView? {
         scrollViews(in: root)
@@ -206,6 +167,141 @@ private struct RatkoScrollViewResolver: NSViewRepresentable {
     }
 }
 
+private final class RatkoTaskPointerDragMonitor: ObservableObject {
+    private weak var window: NSWindow?
+    private var frames: [RatkoTaskDropFrame] = []
+    private var onChanged: ((String, CGPoint) -> Void)?
+    private var onEnded: ((String, CGPoint) -> Void)?
+    private var eventMonitor: Any?
+    private var pressedTaskId: String?
+    private var startPoint: CGPoint?
+    private var isDragging = false
+
+    func connect(
+        window: NSWindow,
+        frames: [RatkoTaskDropFrame],
+        onChanged: @escaping (String, CGPoint) -> Void,
+        onEnded: @escaping (String, CGPoint) -> Void
+    ) {
+        self.frames = frames
+        self.onChanged = onChanged
+        self.onEnded = onEnded
+        guard self.window !== window || eventMonitor == nil else { return }
+        stopMonitoring()
+        self.window = window
+        eventMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
+        ) { [weak self] event in
+            self?.handle(event)
+            return event
+        }
+    }
+
+    func stop() {
+        stopMonitoring()
+        window = nil
+        resetDrag()
+    }
+
+    deinit {
+        stopMonitoring()
+    }
+
+    private func handle(_ event: NSEvent) {
+        guard let point = pointInSwiftUI(for: event) else { return }
+        switch event.type {
+        case .leftMouseDown:
+            let task = RatkoTaskDropLayout(frames: frames).task(at: point)
+            pressedTaskId = task?.id
+            startPoint = point
+            isDragging = false
+            RatkoUiTestDiagnostics.log("pointer-down point=\(point) task=\(String(describing: task?.id))")
+        case .leftMouseDragged:
+            guard let taskId = pressedTaskId, let startPoint else { return }
+            if !isDragging {
+                let distance = hypot(point.x - startPoint.x, point.y - startPoint.y)
+                guard distance >= 5 else { return }
+                isDragging = true
+            }
+            onChanged?(taskId, point)
+        case .leftMouseUp:
+            if let taskId = pressedTaskId, isDragging {
+                onEnded?(taskId, point)
+            }
+            resetDrag()
+        default:
+            break
+        }
+    }
+
+    private func pointInSwiftUI(for event: NSEvent) -> CGPoint? {
+        guard let window else { return nil }
+        let pointInWindow: NSPoint
+        if let eventWindow = event.window {
+            guard eventWindow === window else { return nil }
+            pointInWindow = event.locationInWindow
+        } else {
+            let pointOnScreen = event.locationInWindow
+            guard pressedTaskId != nil || window.frame.contains(pointOnScreen) else { return nil }
+            pointInWindow = window.convertPoint(fromScreen: pointOnScreen)
+        }
+        return CGPoint(x: pointInWindow.x, y: window.frame.height - pointInWindow.y)
+    }
+
+    private func resetDrag() {
+        pressedTaskId = nil
+        startPoint = nil
+        isDragging = false
+    }
+
+    private func stopMonitoring() {
+        if let eventMonitor { NSEvent.removeMonitor(eventMonitor) }
+        eventMonitor = nil
+    }
+}
+
+private struct RatkoTaskPointerDragResolver: NSViewRepresentable {
+    let monitor: RatkoTaskPointerDragMonitor
+    let frames: [RatkoTaskDropFrame]
+    let onChanged: (String, CGPoint) -> Void
+    let onEnded: (String, CGPoint) -> Void
+
+    func makeNSView(context: Context) -> ResolverView {
+        ResolverView(onResolve: connect)
+    }
+
+    func updateNSView(_ nsView: ResolverView, context: Context) {
+        nsView.onResolve = connect
+        nsView.resolve()
+    }
+
+    private func connect(window: NSWindow) {
+        monitor.connect(window: window, frames: frames, onChanged: onChanged, onEnded: onEnded)
+    }
+
+    final class ResolverView: NSView {
+        var onResolve: (NSWindow) -> Void
+
+        init(onResolve: @escaping (NSWindow) -> Void) {
+            self.onResolve = onResolve
+            super.init(frame: .zero)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            resolve()
+        }
+
+        func resolve() {
+            guard let window else { return }
+            onResolve(window)
+        }
+    }
+}
+
 private struct RatkoTaskDropFramePreferenceKey: PreferenceKey {
     static var defaultValue: [RatkoTaskDropFrame] = []
 
@@ -222,11 +318,41 @@ private extension View {
                     key: RatkoTaskDropFramePreferenceKey.self,
                     value: [RatkoTaskDropFrame(
                         kind: kind,
-                        frame: proxy.frame(in: .named("ratko-task-drop-surface"))
+                        frame: proxy.frame(in: .global)
                     )]
                 )
             }
         }
+    }
+}
+
+enum RatkoUiTestDiagnostics {
+    static var isEnabled: Bool {
+        ProcessInfo.processInfo.environment["RATKO_UI_TEST"] == "1"
+    }
+
+    static func log(_ message: String) {
+        guard isEnabled, let data = "[ratko-ui-test] \(message)\n".data(using: .utf8) else { return }
+        FileHandle.standardError.write(data)
+    }
+}
+
+private enum RatkoUiTestWindow {
+    private static var window: NSWindow?
+
+    static func open(store: RatkoStore) {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 760),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "랏코 UI 검증"
+        window.contentView = NSHostingView(rootView: RatkoPanel(store: store))
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        self.window = window
     }
 }
 
@@ -244,6 +370,11 @@ struct TaskMasterRatkoApp: App {
             model = RatkoStore(error: error)
         }
         _store = StateObject(wrappedValue: model)
+        if ProcessInfo.processInfo.environment["RATKO_UI_TEST"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                RatkoUiTestWindow.open(store: model)
+            }
+        }
     }
 
     var body: some Scene {
@@ -279,7 +410,7 @@ struct RatkoPanel: View {
     @State private var taskDropLocation: RatkoTaskDropLocation?
     @State private var taskDropFrames: [RatkoTaskDropFrame] = []
     @StateObject private var dragAutoScroller = RatkoDragAutoScroller()
-    @StateObject private var dragReleaseMonitor = RatkoDragReleaseMonitor()
+    @StateObject private var pointerDragMonitor = RatkoTaskPointerDragMonitor()
     @AppStorage("ratko.panel.height") private var panelHeight = RatkoPanelSizing.defaultHeight
     @State private var resizeStartHeight: Double?
 
@@ -317,13 +448,13 @@ struct RatkoPanel: View {
         .onChange(of: draggingTaskId) { taskId in
             if taskId == nil {
                 dragAutoScroller.stop()
-                dragReleaseMonitor.stop()
                 taskDropLocation = nil
             }
         }
         .onDisappear {
             dragAutoScroller.stop()
-            dragReleaseMonitor.stop()
+            pointerDragMonitor.stop()
+            draggingTaskId = nil
             taskDropLocation = nil
         }
     }
@@ -438,7 +569,11 @@ struct RatkoPanel: View {
                 .frame(maxWidth: .infinity).padding(.vertical, 18)
             } else {
                 ForEach(store.focusTasks, id: \.0.id) { task, timer in
-                    FocusCard(store: store, task: task, timer: timer, draggingTaskId: $draggingTaskId)
+                    FocusCard(
+                        store: store,
+                        task: task,
+                        timer: timer
+                    )
                         .opacity(draggingTaskId == task.id ? 0.45 : 1)
                         .ratkoTaskDropFrame(.task(.focus, id: task.id))
                         .overlay(alignment: .top) {
@@ -456,7 +591,10 @@ struct RatkoPanel: View {
         VStack(alignment: .leading, spacing: 8) {
             sectionHeader("다음 할 일", count: store.nextTasks.count)
             ForEach(store.nextTasks) { task in
-                NextTaskRow(store: store, task: task, draggingTaskId: $draggingTaskId)
+                NextTaskRow(
+                    store: store,
+                    task: task
+                )
                     .opacity(draggingTaskId == task.id ? 0.45 : 1)
                     .ratkoTaskDropFrame(.task(.next, id: task.id))
                     .overlay(alignment: .top) {
@@ -482,19 +620,15 @@ struct RatkoPanel: View {
             focusSection
             nextSection
         }
-        .coordinateSpace(name: "ratko-task-drop-surface")
         .onPreferenceChange(RatkoTaskDropFramePreferenceKey.self) { taskDropFrames = $0 }
-        .onDrop(
-            of: [.plainText],
-            delegate: TaskDropSurfaceDelegate(
-                store: store,
-                layout: RatkoTaskDropLayout(frames: taskDropFrames),
-                draggingTaskId: $draggingTaskId,
-                dropLocation: $taskDropLocation,
-                autoScroller: dragAutoScroller,
-                releaseMonitor: dragReleaseMonitor
+        .background {
+            RatkoTaskPointerDragResolver(
+                monitor: pointerDragMonitor,
+                frames: taskDropFrames,
+                onChanged: updateTaskDrag,
+                onEnded: finishTaskDrag
             )
-        )
+        }
     }
 
     private var footer: some View {
@@ -576,6 +710,30 @@ struct RatkoPanel: View {
         store.createTask(title: newTask)
         newTask = ""
     }
+
+    private func updateTaskDrag(taskId: String, location: CGPoint) {
+        let target = RatkoTaskDropLayout(frames: taskDropFrames).location(at: location)
+        if draggingTaskId == nil {
+            RatkoUiTestDiagnostics.log("drag-start task=\(taskId)")
+        }
+        if taskDropLocation != target {
+            RatkoUiTestDiagnostics.log("drag-preview point=\(location) target=\(String(describing: target))")
+        }
+        draggingTaskId = taskId
+        taskDropLocation = target
+        dragAutoScroller.updateForPointer()
+    }
+
+    private func finishTaskDrag(taskId: String, location: CGPoint) {
+        dragAutoScroller.stop()
+        let target = RatkoTaskDropLayout(frames: taskDropFrames).location(at: location)
+        RatkoUiTestDiagnostics.log("drag-end task=\(taskId) point=\(location) target=\(String(describing: target))")
+        if let target, taskId != target.beforeTaskId {
+            store.moveTask(taskId, to: target.list, before: target.beforeTaskId)
+        }
+        draggingTaskId = nil
+        taskDropLocation = nil
+    }
 }
 
 private struct RatkoIconView: View {
@@ -628,7 +786,6 @@ struct FocusCard: View {
     @ObservedObject var store: RatkoStore
     let task: TaskCard
     let timer: TimerRecord
-    @Binding var draggingTaskId: String?
     @Environment(\.openWindow) private var openWindow
     @State private var newStep = ""
     @State private var memo = ""
@@ -641,8 +798,6 @@ struct FocusCard: View {
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 12)
                 .fill(.regularMaterial)
-                .contentShape(RoundedRectangle(cornerRadius: 12))
-                .onDrag { dragProvider() }
                 .help("버튼과 입력칸을 제외한 카드 공간을 끌어 순서 바꾸기")
                 .accessibilityLabel("작업 카드 순서 바꾸기")
             VStack(alignment: .leading, spacing: 10) {
@@ -654,7 +809,6 @@ struct FocusCard: View {
                     Text(formattedElapsed(store.elapsed(for: timer))).font(.system(.body, design: .monospaced)).bold()
                 }
                 .contentShape(Rectangle())
-                .onDrag { dragProvider() }
                 HStack(alignment: .firstTextBaseline) {
                     Button(task.title) { store.openTask(task) }
                         .buttonStyle(.plain).font(.headline).lineLimit(2)
@@ -706,7 +860,6 @@ struct FocusCard: View {
                             Text(formattedElapsed(store.stepElapsed(for: timer, index: index)))
                                 .font(.system(.caption2, design: .monospaced)).foregroundStyle(.secondary)
                                 .contentShape(Rectangle())
-                                .onDrag { dragProvider() }
                             Button { store.moveStep(taskId: task.id, from: index, offset: -1) } label: {
                                 Image(systemName: "chevron.up")
                             }.buttonStyle(.plain).disabled(index == 0)
@@ -756,6 +909,7 @@ struct FocusCard: View {
             }
             .padding(12)
         }
+        .contentShape(RoundedRectangle(cornerRadius: 12))
         .onChange(of: stepEditorFocused) { focused in
             if !focused, editingStepIndex != nil { saveEditedStep() }
         }
@@ -799,24 +953,17 @@ struct FocusCard: View {
         stepEditorFocused = false
     }
 
-    private func dragProvider() -> NSItemProvider {
-        draggingTaskId = task.id
-        return NSItemProvider(object: task.id as NSString)
-    }
 }
 
 private struct NextTaskRow: View {
     @ObservedObject var store: RatkoStore
     let task: TaskCard
-    @Binding var draggingTaskId: String?
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 7)
                 .fill(Color.primary.opacity(0.001))
-                .contentShape(RoundedRectangle(cornerRadius: 7))
-                .onDrag { dragProvider() }
                 .help("버튼을 제외한 카드 공간을 끌어 순서 바꾸기")
                 .accessibilityLabel("작업 카드 순서 바꾸기")
             HStack(spacing: 8) {
@@ -825,7 +972,6 @@ private struct NextTaskRow: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 48, alignment: .leading)
                     .contentShape(Rectangle())
-                    .onDrag { dragProvider() }
                 Button(task.title) { store.openTask(task) }
                     .buttonStyle(.plain)
                     .lineLimit(1)
@@ -845,68 +991,9 @@ private struct NextTaskRow: View {
             .padding(.vertical, 4)
             .padding(.horizontal, 2)
         }
+        .contentShape(RoundedRectangle(cornerRadius: 7))
     }
 
-    private func dragProvider() -> NSItemProvider {
-        draggingTaskId = task.id
-        return NSItemProvider(object: task.id as NSString)
-    }
-}
-
-private struct TaskDropSurfaceDelegate: DropDelegate {
-    let store: RatkoStore
-    let layout: RatkoTaskDropLayout
-    @Binding var draggingTaskId: String?
-    @Binding var dropLocation: RatkoTaskDropLocation?
-    let autoScroller: RatkoDragAutoScroller
-    let releaseMonitor: RatkoDragReleaseMonitor
-
-    func validateDrop(info: DropInfo) -> Bool {
-        draggingTaskId != nil && layout.location(at: info.location) != nil
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        dropLocation = layout.location(at: info.location)
-        watchForRelease()
-        autoScroller.updateForPointer()
-        return DropProposal(operation: .move)
-    }
-
-    func dropEntered(info: DropInfo) {
-        dropLocation = layout.location(at: info.location)
-        watchForRelease()
-        autoScroller.updateForPointer()
-    }
-
-    func dropExited(info: DropInfo) {
-        autoScroller.scheduleStop()
-        dropLocation = nil
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        autoScroller.stop()
-        releaseMonitor.stop()
-        let targetLocation = dropLocation ?? layout.location(at: info.location)
-        dropLocation = nil
-        guard let taskId = draggingTaskId, let targetLocation else { return false }
-        if taskId == targetLocation.beforeTaskId {
-            draggingTaskId = nil
-            return true
-        }
-        store.moveTask(taskId, to: targetLocation.list, before: targetLocation.beforeTaskId)
-        draggingTaskId = nil
-        return true
-    }
-
-    private func watchForRelease() {
-        let taskBinding = _draggingTaskId
-        let locationBinding = _dropLocation
-        releaseMonitor.start {
-            autoScroller.stop()
-            taskBinding.wrappedValue = nil
-            locationBinding.wrappedValue = nil
-        }
-    }
 }
 
 struct FloatingFocusView: View {

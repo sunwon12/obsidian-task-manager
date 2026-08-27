@@ -32,12 +32,25 @@ struct RatkoTaskDropFrame: Equatable {
 struct RatkoTaskDropLayout: Equatable {
     let frames: [RatkoTaskDropFrame]
 
+    func task(at point: CGPoint) -> (list: RatkoTaskList, id: String)? {
+        for measurement in frames where measurement.frame.contains(point) {
+            if case .task(let list, let id) = measurement.kind {
+                return (list, id)
+            }
+        }
+        return nil
+    }
+
     func location(at point: CGPoint) -> RatkoTaskDropLocation? {
         let sections = frames.compactMap { measurement -> (RatkoTaskList, CGRect)? in
             guard case .section(let list) = measurement.kind else { return nil }
             return (list, measurement.frame)
         }
         guard !sections.isEmpty else { return nil }
+        let surfaceFrame = sections.dropFirst().reduce(sections[0].1) { partial, section in
+            partial.union(section.1)
+        }
+        guard surfaceFrame.contains(point) else { return nil }
 
         guard let targetList = sections.min(by: { left, right in
             verticalDistance(from: point.y, to: left.1) < verticalDistance(from: point.y, to: right.1)

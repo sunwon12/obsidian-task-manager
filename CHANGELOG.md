@@ -34,16 +34,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Ratko task dragging now uses one geometry-aware drop surface for both `현재 작업` and `다음 할 일`
-  instead of competing card and section drop handlers. The pointer's position relative to each card midpoint
-  selects exactly one insertion boundary, the dragged card dims, and the purple preview no longer flickers or
-  jumps to a list end before release.
+- Ratko task dragging now observes the panel's AppKit mouse stream after a 5-point movement threshold,
+  because SwiftUI's item-provider drag callbacks could be skipped entirely inside the menu-bar panel.
+  One geometry-aware surface covers both `현재 작업` and `다음 할 일`; the pointer's position relative
+  to each card midpoint selects one purple insertion boundary, the dragged card dims, and mouse-up commits
+  and persists the move. A normal click still reaches the original title, input, and action controls.
 - Dragging a Ratko task near the top or bottom of the scroll viewport now smoothly auto-scrolls long
   lists. The panel resolves SwiftUI's actual nested `NSScrollView` instead of relying on a missing
   enclosing view, and uses one 60 Hz eased path instead of event-dependent double ticks. A purple
-  insertion line previews the target card boundary. An event-driven `leftMouseUp` monitor clears
-  stale feedback even when SwiftUI omits its drop-end callback, without polling
-  `pressedMouseButtons`, which can report zero during an active AppKit drag.
+  insertion line previews the target card boundary. The same event-driven pointer session clears stale
+  feedback on `leftMouseUp` without polling `pressedMouseButtons`, which can report zero during a drag.
 - Swift Ratko now restores its status-item preference immediately to the left of macOS Wi-Fi on
   every launch, keeping the otter in the visible menu-bar cluster instead of letting a crowded bar
   park it off-screen.

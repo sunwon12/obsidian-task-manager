@@ -127,6 +127,9 @@ final class TaskMarkdownRepositoryTests: XCTestCase {
         XCTAssertEqual(layout.location(at: CGPoint(x: 20, y: 260)), RatkoTaskDropLocation(list: .focus, beforeTaskId: nil))
         XCTAssertEqual(layout.location(at: CGPoint(x: 20, y: 360)), RatkoTaskDropLocation(list: .next, beforeTaskId: "next-a"))
         XCTAssertEqual(layout.location(at: CGPoint(x: 20, y: 500)), RatkoTaskDropLocation(list: .next, beforeTaskId: nil))
+        XCTAssertEqual(layout.task(at: CGPoint(x: 20, y: 40))?.list, .focus)
+        XCTAssertEqual(layout.task(at: CGPoint(x: 20, y: 40))?.id, "focus-a")
+        XCTAssertNil(layout.task(at: CGPoint(x: 20, y: 130)))
     }
 
     func testTaskDropLayoutSupportsAnEmptyList() {
@@ -137,6 +140,9 @@ final class TaskMarkdownRepositoryTests: XCTestCase {
         ])
 
         XCTAssertEqual(layout.location(at: CGPoint(x: 20, y: 70)), RatkoTaskDropLocation(list: .focus, beforeTaskId: nil))
+        XCTAssertNil(layout.location(at: CGPoint(x: 20, y: -20)))
+        XCTAssertNil(layout.location(at: CGPoint(x: 380, y: 70)))
+        XCTAssertNil(layout.task(at: CGPoint(x: 20, y: 70)))
     }
 
     @MainActor
@@ -160,18 +166,6 @@ final class TaskMarkdownRepositoryTests: XCTestCase {
         )
 
         XCTAssertTrue(resolved === taskScrollView)
-    }
-
-    @MainActor
-    func testTaskDragReleaseMonitorDoesNotClearWhileWaitingForMouseUp() {
-        let monitor = RatkoDragReleaseMonitor()
-        var released = false
-        monitor.start { released = true }
-
-        RunLoop.main.run(until: Date().addingTimeInterval(0.08))
-        XCTAssertFalse(released)
-        XCTAssertTrue(monitor.isMonitoring)
-        monitor.stop()
     }
 
     func testCreatesPluginCompatibleTaskIdAndMarkdown() throws {
