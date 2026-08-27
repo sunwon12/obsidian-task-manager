@@ -4,7 +4,7 @@
 //
 // AI 리포트와 AI 초안이 같은 실행 경로를 쓰되 인자와 출력 처리만 다르다.
 
-import { debugLog } from "../ui/timer/debugLog";
+import { debugLog } from "../core/debugLog";
 
 const EXTRA_PATHS = ["/.local/bin", "/opt/homebrew/bin", "/usr/local/bin"] as const;
 /** stdout 전체를 보관하되 폭주는 막는다 — JSON 응답은 이 안에 넉넉히 들어간다. */

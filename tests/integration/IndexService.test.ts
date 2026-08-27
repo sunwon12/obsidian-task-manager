@@ -7,7 +7,6 @@ import { MeetingRepository } from "../../src/repositories/MeetingRepository";
 import { ProjectRepository } from "../../src/repositories/ProjectRepository";
 import { BoardService } from "../../src/services/BoardService";
 import { TaskService } from "../../src/services/TaskService";
-import { TaskTimerService } from "../../src/services/TaskTimerService";
 import { DiagnosticsLog } from "../../src/core/diagnostics";
 import { EventBus } from "../../src/core/eventBus";
 import { createTaskMasterStore } from "../../src/store/taskMasterStore";
@@ -119,43 +118,6 @@ describe("IndexService event handlers", () => {
     expect(store.getState().tasks.get(t.id)?.status).toBe("doing");
     expect(taskIds(store.getState().board, "doing")).toContain(t.id);
     expect(taskIds(store.getState().board, "todo")).not.toContain(t.id);
-  });
-
-  it("external step/currentStep edits immediately refresh an active timer snapshot", async () => {
-    const { app, tasks, idx, store, events } = build();
-    await idx.bootstrap();
-    const task = await tasks.createTask({
-      title: "외부 수정 반영",
-      status: "doing",
-      steps: ["하나", "둘", "셋"],
-    });
-    const timers = new TaskTimerService(events, store, tasks, {
-      load: async () => [],
-      save: async () => {},
-    });
-    await timers.init();
-    const listener = vi.fn();
-    timers.subscribe(listener);
-
-    const file = app.vault.getAbstractFileByPath(task.path);
-    const raw = await app.vault.read(file as never);
-    const changed = raw
-      .replace("step2: 둘", "step2: 두 번째 단계 수정")
-      .replace("currentStep: 1", "currentStep: 2");
-    await app.vault.modify(file as never, changed);
-    (app.metadataCache as unknown as { __set(p: string, fm: Record<string, unknown>): void }).__set(
-      task.path,
-      { type: "task" },
-    );
-
-    await idx.handleMetaChangedForTest(file as never);
-
-    expect(timers.getTimer(task.id)).toMatchObject({
-      steps: ["하나", "두 번째 단계 수정", "셋"],
-      currentStep: 2,
-    });
-    expect(listener).toHaveBeenCalled();
-    timers.dispose();
   });
 
   it("handleDelete removes task from store and board", async () => {

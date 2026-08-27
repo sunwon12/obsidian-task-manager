@@ -5,6 +5,18 @@ All notable changes to TaskMaster Obsidian plugin will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.0] - 2026-08-27
+
+### Changed
+
+- Moved Ratko's macOS menu bar, quick panel, timer, step tracking, memo entry, and focus window
+  into the independent SwiftUI app under `native/TaskMasterRatko`.
+- The Swift app now reads and writes the existing `TaskMaster/Tasks/*.md` and `.timers.json`
+  contracts directly, so it continues running while Obsidian reloads or is closed.
+- Removed the Obsidian renderer-owned Electron Tray, BrowserWindow popover, floating window,
+  global shortcut, and TypeScript timer runtime. `.timers.json` now has one writer: Swift Ratko.
+- Added a macOS app/LaunchAgent installer at `scripts/install-ratko.sh` and Swift contract tests.
+
 ## [0.18.3] - 2026-08-27
 
 ### Fixed

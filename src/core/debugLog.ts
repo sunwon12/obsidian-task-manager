@@ -1,6 +1,6 @@
-// 메뉴바 Tray와 팝오버는 Obsidian 창 밖에서 살기 때문에, 개발자 콘솔을 열어두지 않으면
-// 실패가 아무 데도 안 남는다. 창 생성·표시·정리만 파일 한 줄로 남겨 사후에 짚을 수 있게 한다.
-const LOG_PATH = "/tmp/taskmaster-popover.log";
+// Obsidian 개발자 콘솔을 열어두지 않아도 백그라운드 AI 프로세스의 실행 경계를
+// 사후에 확인할 수 있게 최소 진단 로그를 남긴다.
+const LOG_PATH = "/tmp/taskmaster-plugin.log";
 
 export function debugLog(line: string): void {
   try {

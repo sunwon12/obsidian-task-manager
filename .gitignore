@@ -4,6 +4,7 @@ node_modules/
 # Build artifacts
 dist/
 *.tsbuildinfo
+native/TaskMasterRatko/.build/
 
 # Test coverage
 coverage/
