@@ -5,6 +5,14 @@ All notable changes to TaskMaster Obsidian plugin will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.2] - 2026-08-27
+
+### Fixed
+
+- The empty-step hint (`+를 눌러 첫 단계를 추가해보세요`) is now a full-width click target that
+  opens the inline step input. It previously looked actionable but was plain text; only the smaller
+  `+ 단계 추가` control below it worked.
+
 ## [0.18.1] - 2026-08-26
 
 ### Fixed

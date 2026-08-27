@@ -151,6 +151,23 @@ describe("TaskMenuPopover — 메뉴바 빠른 작업 패널", () => {
     expect(content.html).toContain('class="task-title scroll-title task-open"');
   });
 
+  it("단계가 없는 카드의 안내 줄 전체가 단계 입력창을 여는 링크다", async () => {
+    const graph = buildGraph();
+    await graph.timers.init();
+    const focus = await graph.taskService.createTask({ title: "단계 없는 작업", status: "doing" });
+
+    const content = renderTaskMenuPopover(
+      graph.timers.getTimers(),
+      [...graph.store.getState().tasks.values()],
+      new Date("2026-08-22T12:00:00+09:00"),
+    );
+
+    expect(content.html).toContain(
+      `<a class="step-empty" draggable="false" href="taskmaster-menu://toggle-step-form?taskId=${focus.id}"`,
+    );
+    expect(content.html).toContain("+를 눌러 첫 단계를 추가해보세요.");
+  });
+
   it("메뉴바 재클릭·닫기는 이전 앱으로 포커스를 돌려주고, 보드 열기는 그대로 둔다", async () => {
     const graph = buildGraph();
     await graph.timers.init();

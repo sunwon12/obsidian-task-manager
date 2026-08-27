@@ -726,7 +726,7 @@ function renderFocusCard(
   const primaryGlyph = timer.phase === "running" ? "Ⅱ" : "▶";
   const steps = timer.steps.length > 0
     ? `<ol class="step-list">${timer.steps.map((step, index) => renderStep(timer, step, index)).join("")}</ol>`
-    : `<p class="step-empty">${escapeHtml(t("timer.popover.firstStepHint"))}</p>`;
+    : `<a class="step-empty${stepFormOpen ? " open" : ""}" draggable="false" href="${actionUrl("toggle-step-form", timer.taskId)}" aria-label="${escapeHtml(t("timer.popover.addStep"))}">${escapeHtml(t("timer.popover.firstStepHint"))}</a>`;
   return `<article class="focus-card ${phaseClass}" draggable="true" data-drag="focus" data-task-id="${escapeHtml(timer.taskId)}">
     <div class="focus-topline">
       <span class="phase-dot" aria-hidden="true"></span>
@@ -1499,7 +1499,9 @@ export const POPOVER_DOCUMENT = `<!doctype html>
   .completed .step-mark { color: #737a85; font-size: 12px; }
   .step-label { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .step-time { flex: none; color: #6f7580; font-size: 10px; font-variant-numeric: tabular-nums; }
-  .step-empty { margin-top: 9px; color: #747a85; font-size: 11px; }
+  .step-empty { display: block; min-height: 28px; margin-top: 9px; padding: 6px 7px; border-radius: 8px; color: #747a85; font-size: 11px; }
+  .step-empty:hover { color: #dce8f7; background: rgba(117,180,255,.09); }
+  .step-empty.open { color: #9fcfff; background: rgba(117,180,255,.12); }
   .quick-form { display: flex; align-items: stretch; gap: 6px; margin-top: 9px; }
   .quick-form input, .quick-form select { min-width: 0; height: 36px; border: 1px solid rgba(255,255,255,.09); outline: none; color: #f3f5f8; background: #1d2026; border-radius: 10px; }
   .quick-form input { flex: 1; padding: 0 11px; }
