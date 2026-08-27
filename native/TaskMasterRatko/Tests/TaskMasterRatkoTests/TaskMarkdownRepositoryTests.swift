@@ -52,6 +52,18 @@ final class TaskMarkdownRepositoryTests: XCTestCase {
         XCTAssertEqual(updated.currentStep, 1)
     }
 
+    func testRenamingStepPreservesSelectionAndElapsedSeconds() throws {
+        let task = try fixture()
+        var steps = task.steps
+        steps[1] = "수정한 구현 단계"
+
+        let updated = try repository.updateTask(task, steps: steps)
+
+        XCTAssertEqual(updated.steps, ["조사", "수정한 구현 단계"])
+        XCTAssertEqual(updated.currentStep, 2)
+        XCTAssertEqual(updated.stepSeconds, [10, 0])
+    }
+
     func testStopConversionRoundsToHundredthAndKeepsMinimum() {
         XCTAssertEqual(elapsedMd(0), 0)
         XCTAssertEqual(elapsedMd(2 * 60 * 1_000), 0.01)

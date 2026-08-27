@@ -290,6 +290,9 @@ struct FocusCard: View {
     @State private var newStep = ""
     @State private var memo = ""
     @State private var showingMemo = false
+    @State private var editingStepIndex: Int?
+    @State private var editingStepText = ""
+    @FocusState private var stepEditorFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -321,16 +324,39 @@ struct FocusCard: View {
                         Image(systemName: stepIcon(index))
                             .foregroundStyle(task.currentStep == index + 1 ? Color.accentColor : Color.secondary)
                     }.buttonStyle(.plain)
-                    Text(step).font(.caption).lineLimit(2)
-                    Spacer()
-                    Text(formattedElapsed(store.stepElapsed(for: timer, index: index)))
-                        .font(.system(.caption2, design: .monospaced)).foregroundStyle(.secondary)
-                    Button { store.moveStep(taskId: task.id, from: index, offset: -1) } label: {
-                        Image(systemName: "chevron.up")
-                    }.buttonStyle(.plain).disabled(index == 0)
-                    Button { store.moveStep(taskId: task.id, from: index, offset: 1) } label: {
-                        Image(systemName: "chevron.down")
-                    }.buttonStyle(.plain).disabled(index == task.steps.count - 1)
+                    if editingStepIndex == index {
+                        TextField("단계 내용", text: $editingStepText)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.caption)
+                            .focused($stepEditorFocused)
+                            .onSubmit(saveEditedStep)
+                        Button(action: saveEditedStep) { Image(systemName: "checkmark") }
+                            .buttonStyle(.plain)
+                            .disabled(editingStepText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            .help("수정 저장")
+                        Button(action: cancelEditingStep) { Image(systemName: "xmark") }
+                            .buttonStyle(.plain)
+                            .help("수정 취소")
+                    } else {
+                        Button { beginEditingStep(index: index, text: step) } label: {
+                            HStack(spacing: 3) {
+                                Text(step).font(.caption).lineLimit(2)
+                                Image(systemName: "pencil").font(.system(size: 8))
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .help("단계 내용 수정")
+                        Spacer()
+                        Text(formattedElapsed(store.stepElapsed(for: timer, index: index)))
+                            .font(.system(.caption2, design: .monospaced)).foregroundStyle(.secondary)
+                        Button { store.moveStep(taskId: task.id, from: index, offset: -1) } label: {
+                            Image(systemName: "chevron.up")
+                        }.buttonStyle(.plain).disabled(index == 0)
+                        Button { store.moveStep(taskId: task.id, from: index, offset: 1) } label: {
+                            Image(systemName: "chevron.down")
+                        }.buttonStyle(.plain).disabled(index == task.steps.count - 1)
+                    }
                 }
             }
             HStack {
@@ -372,6 +398,26 @@ struct FocusCard: View {
     private func addStep() {
         store.addStep(taskId: task.id, value: newStep)
         newStep = ""
+    }
+
+    private func beginEditingStep(index: Int, text: String) {
+        editingStepIndex = index
+        editingStepText = text
+        DispatchQueue.main.async { stepEditorFocused = true }
+    }
+
+    private func saveEditedStep() {
+        guard let index = editingStepIndex,
+              !editingStepText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return }
+        store.renameStep(taskId: task.id, index: index, value: editingStepText)
+        cancelEditingStep()
+    }
+
+    private func cancelEditingStep() {
+        editingStepIndex = nil
+        editingStepText = ""
+        stepEditorFocused = false
     }
 }
 

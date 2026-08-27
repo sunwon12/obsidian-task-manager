@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   existing daily-feedback Markdown, shows the highlight while collapsed and the complete feedback
   when expanded, opens the source note, and can run the existing `daily-schedule-feedback` skill
   on demand. Scheduled generation remains owned by the Obsidian plugin to avoid duplicate runs.
+- Existing step text can now be edited inline in a focus card. Clicking a step or its pencil opens
+  an editor; Return or the checkmark saves, while the current-step pointer and elapsed seconds stay
+  attached to the same step index.
 
 ## [0.19.0] - 2026-08-27
 

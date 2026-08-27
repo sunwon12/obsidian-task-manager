@@ -249,6 +249,20 @@ final class RatkoStore: ObservableObject {
         } catch { lastError = error.localizedDescription }
     }
 
+    func renameStep(taskId: String, index: Int, value: String) {
+        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, let repository,
+              let task = tasks.first(where: { $0.id == taskId }),
+              task.steps.indices.contains(index)
+        else { return }
+        do {
+            var steps = task.steps
+            steps[index] = String(value.prefix(240))
+            _ = try repository.updateTask(task, steps: steps)
+            reload()
+        } catch { lastError = error.localizedDescription }
+    }
+
     func moveStep(taskId: String, from: Int, offset: Int) {
         guard let repository,
               let task = tasks.first(where: { $0.id == taskId }),
