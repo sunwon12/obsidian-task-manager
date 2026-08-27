@@ -16,6 +16,15 @@ fi
 
 swift build --package-path "$PROJECT_DIR" -c release
 
+RUNNING_PID="$(pgrep -f "^$APP_DIR/Contents/MacOS/TaskMasterRatko$" | head -n 1 || true)"
+if [[ -n "$RUNNING_PID" ]]; then
+  kill "$RUNNING_PID"
+  for _ in {1..30}; do
+    kill -0 "$RUNNING_PID" 2>/dev/null || break
+    sleep 0.1
+  done
+fi
+
 mkdir -p "$CONTENTS_DIR/MacOS" "$CONTENTS_DIR/Resources" "$CONFIG_DIR" "${LAUNCH_AGENT:h}"
 cp "$PROJECT_DIR/.build/release/TaskMasterRatko" "$CONTENTS_DIR/MacOS/TaskMasterRatko"
 

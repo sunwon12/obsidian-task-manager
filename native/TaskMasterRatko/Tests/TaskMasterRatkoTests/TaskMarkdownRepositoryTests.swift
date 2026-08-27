@@ -66,6 +66,26 @@ final class TaskMarkdownRepositoryTests: XCTestCase {
         XCTAssertEqual(task.title, "새 작업")
     }
 
+    func testPinsMenuBarItemImmediatelyLeftOfWiFi() {
+        let ratkoSuite = "ratko-placement-\(UUID().uuidString)"
+        let controlCenterSuite = "ratko-control-center-\(UUID().uuidString)"
+        let ratkoDefaults = UserDefaults(suiteName: ratkoSuite)!
+        let controlCenterDefaults = UserDefaults(suiteName: controlCenterSuite)!
+        defer {
+            ratkoDefaults.removePersistentDomain(forName: ratkoSuite)
+            controlCenterDefaults.removePersistentDomain(forName: controlCenterSuite)
+        }
+        controlCenterDefaults.set(243, forKey: MenuBarPlacement.wifiPositionKey)
+
+        let position = MenuBarPlacement.pinNextToWiFi(
+            ratkoDefaults: ratkoDefaults,
+            controlCenterDefaults: controlCenterDefaults
+        )
+
+        XCTAssertEqual(position, 263)
+        XCTAssertEqual(ratkoDefaults.integer(forKey: MenuBarPlacement.ratkoPositionKey), 263)
+    }
+
     private func fixture() throws -> TaskCard {
         let url = repository.tasksURL.appendingPathComponent("fixture - task_01ABCDEF.md")
         let raw = """

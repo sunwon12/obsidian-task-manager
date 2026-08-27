@@ -6,6 +6,7 @@ struct TaskMasterRatkoApp: App {
     @StateObject private var store: RatkoStore
 
     init() {
+        MenuBarPlacement.pinNextToWiFi()
         let model: RatkoStore
         do {
             let configuration = try RatkoConfiguration.load()

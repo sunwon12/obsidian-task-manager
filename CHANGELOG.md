@@ -5,6 +5,16 @@ All notable changes to TaskMaster Obsidian plugin will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Swift Ratko now restores its status-item preference immediately to the left of macOS Wi-Fi on
+  every launch, keeping the otter in the visible menu-bar cluster instead of letting a crowded bar
+  park it off-screen.
+- The Ratko installer now stops an already running copy before replacing and reopening the app, so
+  an update cannot leave the previous binary running until the next login.
+
 ## [0.19.0] - 2026-08-27
 
 ### Changed
