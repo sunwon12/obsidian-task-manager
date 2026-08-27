@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Dragging a Ratko task near the top or bottom of the scroll viewport now continuously auto-scrolls
+  long lists. Scrolling accelerates toward the edge and stops on center return, drop, exit, or panel
+  close, instead of trapping the dragged card inside the initially visible viewport.
 - Swift Ratko now restores its status-item preference immediately to the left of macOS Wi-Fi on
   every launch, keeping the otter in the visible menu-bar cluster instead of letting a crowded bar
   park it off-screen.

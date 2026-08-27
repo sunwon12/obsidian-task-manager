@@ -15,6 +15,136 @@ enum RatkoPanelSizing {
     }
 }
 
+enum RatkoDragAutoScroll {
+    static let edgeSize = 56.0
+    static let maximumPointsPerTick = 10.0
+
+    static func velocity(pointerY: Double, viewportMinY: Double, viewportMaxY: Double) -> Double {
+        guard viewportMaxY > viewportMinY else { return 0 }
+        let threshold = min(edgeSize, (viewportMaxY - viewportMinY) / 2)
+        let bottomIntensity = min(1, max(0, (threshold - (pointerY - viewportMinY)) / threshold))
+        let topIntensity = min(1, max(0, (threshold - (viewportMaxY - pointerY)) / threshold))
+        if bottomIntensity == topIntensity { return 0 }
+        return maximumPointsPerTick * (bottomIntensity > topIntensity ? bottomIntensity : -topIntensity)
+    }
+
+    static func nextOffset(current: Double, velocity: Double, minimum: Double, maximum: Double) -> Double {
+        min(maximum, max(minimum, current + velocity))
+    }
+}
+
+private final class RatkoDragAutoScroller: ObservableObject {
+    weak var scrollView: NSScrollView?
+    private var timer: Timer?
+    private var pointsPerTick = 0.0
+    private var pendingStop: DispatchWorkItem?
+
+    func updateForPointer(_ pointer: NSPoint = NSEvent.mouseLocation) {
+        pendingStop?.cancel()
+        pendingStop = nil
+        guard let scrollView,
+              let window = scrollView.window,
+              let documentView = scrollView.documentView
+        else {
+            stop()
+            return
+        }
+        let clipView = scrollView.contentView
+        let viewportInWindow = clipView.convert(clipView.bounds, to: nil)
+        let viewportOnScreen = window.convertToScreen(viewportInWindow)
+        let velocity = RatkoDragAutoScroll.velocity(
+            pointerY: pointer.y,
+            viewportMinY: viewportOnScreen.minY,
+            viewportMaxY: viewportOnScreen.maxY
+        )
+        guard velocity != 0 else {
+            stop()
+            return
+        }
+        pointsPerTick = documentView.isFlipped ? velocity : -velocity
+        if timer == nil {
+            let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+                self?.scrollOneTick()
+            }
+            self.timer = timer
+            RunLoop.main.add(timer, forMode: .common)
+        }
+        scrollOneTick()
+    }
+
+    func scheduleStop() {
+        pendingStop?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.stop() }
+        pendingStop = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
+    }
+
+    func stop() {
+        pendingStop?.cancel()
+        pendingStop = nil
+        timer?.invalidate()
+        timer = nil
+        pointsPerTick = 0
+    }
+
+    private func scrollOneTick() {
+        guard let scrollView, let documentView = scrollView.documentView else {
+            stop()
+            return
+        }
+        let clipView = scrollView.contentView
+        let minimum = Double(documentView.bounds.minY)
+        let maximum = max(minimum, Double(documentView.bounds.maxY - clipView.bounds.height))
+        let current = Double(clipView.bounds.origin.y)
+        let next = RatkoDragAutoScroll.nextOffset(
+            current: current,
+            velocity: pointsPerTick,
+            minimum: minimum,
+            maximum: maximum
+        )
+        guard next != current else { return }
+        clipView.scroll(to: NSPoint(x: clipView.bounds.origin.x, y: next))
+        scrollView.reflectScrolledClipView(clipView)
+    }
+}
+
+private struct RatkoScrollViewResolver: NSViewRepresentable {
+    let onResolve: (NSScrollView) -> Void
+
+    func makeNSView(context: Context) -> ResolverView {
+        ResolverView(onResolve: onResolve)
+    }
+
+    func updateNSView(_ nsView: ResolverView, context: Context) {
+        nsView.onResolve = onResolve
+        nsView.resolve()
+    }
+
+    final class ResolverView: NSView {
+        var onResolve: (NSScrollView) -> Void
+
+        init(onResolve: @escaping (NSScrollView) -> Void) {
+            self.onResolve = onResolve
+            super.init(frame: .zero)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            resolve()
+        }
+
+        func resolve() {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let scrollView = enclosingScrollView else { return }
+                onResolve(scrollView)
+            }
+        }
+    }
+}
+
 @main
 struct TaskMasterRatkoApp: App {
     @StateObject private var store: RatkoStore
@@ -61,6 +191,7 @@ struct RatkoPanel: View {
     @State private var newTask = ""
     @State private var feedbackExpanded = false
     @State private var draggingTaskId: String?
+    @StateObject private var dragAutoScroller = RatkoDragAutoScroller()
     @AppStorage("ratko.panel.height") private var panelHeight = RatkoPanelSizing.defaultHeight
     @State private var resizeStartHeight: Double?
 
@@ -83,6 +214,9 @@ struct RatkoPanel: View {
                     nextSection
                 }
                 .padding(14)
+                .background {
+                    RatkoScrollViewResolver { dragAutoScroller.scrollView = $0 }
+                }
             }
             Divider()
             footer
@@ -92,6 +226,12 @@ struct RatkoPanel: View {
         .frame(height: CGFloat(clampedPanelHeight))
         .onAppear {
             panelHeight = clampedPanelHeight
+        }
+        .onChange(of: draggingTaskId) { taskId in
+            if taskId == nil { dragAutoScroller.stop() }
+        }
+        .onDisappear {
+            dragAutoScroller.stop()
         }
     }
 
@@ -212,7 +352,8 @@ struct RatkoPanel: View {
                                 store: store,
                                 targetList: .focus,
                                 beforeTaskId: task.id,
-                                draggingTaskId: $draggingTaskId
+                                draggingTaskId: $draggingTaskId,
+                                autoScroller: dragAutoScroller
                             )
                         )
                 }
@@ -224,7 +365,8 @@ struct RatkoPanel: View {
                 store: store,
                 targetList: .focus,
                 beforeTaskId: nil,
-                draggingTaskId: $draggingTaskId
+                draggingTaskId: $draggingTaskId,
+                autoScroller: dragAutoScroller
             )
         )
     }
@@ -240,7 +382,8 @@ struct RatkoPanel: View {
                             store: store,
                             targetList: .next,
                             beforeTaskId: task.id,
-                            draggingTaskId: $draggingTaskId
+                            draggingTaskId: $draggingTaskId,
+                            autoScroller: dragAutoScroller
                         )
                     )
             }
@@ -259,7 +402,8 @@ struct RatkoPanel: View {
                 store: store,
                 targetList: .next,
                 beforeTaskId: nil,
-                draggingTaskId: $draggingTaskId
+                draggingTaskId: $draggingTaskId,
+                autoScroller: dragAutoScroller
             )
         )
     }
@@ -606,16 +750,27 @@ private struct TaskDropDelegate: DropDelegate {
     let targetList: RatkoTaskList
     let beforeTaskId: String?
     @Binding var draggingTaskId: String?
+    let autoScroller: RatkoDragAutoScroller
 
     func validateDrop(info: DropInfo) -> Bool {
         draggingTaskId != nil
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
+        autoScroller.updateForPointer()
+        return DropProposal(operation: .move)
+    }
+
+    func dropEntered(info: DropInfo) {
+        autoScroller.updateForPointer()
+    }
+
+    func dropExited(info: DropInfo) {
+        autoScroller.scheduleStop()
     }
 
     func performDrop(info: DropInfo) -> Bool {
+        autoScroller.stop()
         guard let taskId = draggingTaskId else { return false }
         if taskId == beforeTaskId {
             draggingTaskId = nil

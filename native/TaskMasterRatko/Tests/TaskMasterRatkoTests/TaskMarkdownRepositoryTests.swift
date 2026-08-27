@@ -78,6 +78,36 @@ final class TaskMarkdownRepositoryTests: XCTestCase {
         XCTAssertEqual(RatkoPanelSizing.maximumHeight(visibleScreenHeight: 300), 360)
     }
 
+    func testTaskDragAutoScrollUsesEdgesAndStopsInCenter() {
+        XCTAssertEqual(
+            RatkoDragAutoScroll.velocity(pointerY: 300, viewportMinY: 100, viewportMaxY: 500),
+            0
+        )
+        XCTAssertLessThan(
+            RatkoDragAutoScroll.velocity(pointerY: 490, viewportMinY: 100, viewportMaxY: 500),
+            0
+        )
+        XCTAssertGreaterThan(
+            RatkoDragAutoScroll.velocity(pointerY: 110, viewportMinY: 100, viewportMaxY: 500),
+            0
+        )
+    }
+
+    func testTaskDragAutoScrollClampsAtDocumentBounds() {
+        XCTAssertEqual(
+            RatkoDragAutoScroll.nextOffset(current: 4, velocity: -10, minimum: 0, maximum: 300),
+            0
+        )
+        XCTAssertEqual(
+            RatkoDragAutoScroll.nextOffset(current: 296, velocity: 10, minimum: 0, maximum: 300),
+            300
+        )
+        XCTAssertEqual(
+            RatkoDragAutoScroll.nextOffset(current: 120, velocity: 7, minimum: 0, maximum: 300),
+            127
+        )
+    }
+
     func testCreatesPluginCompatibleTaskIdAndMarkdown() throws {
         let task = try repository.createTask(title: "새 작업")
         XCTAssertNotNil(task.id.range(of: "^task_[0-9A-HJKMNP-TV-Z]{26}$", options: .regularExpression))
