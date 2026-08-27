@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Existing step text can now be edited inline in a focus card. Clicking a step or its pencil opens
   an editor; Return or the checkmark saves, while the current-step pointer and elapsed seconds stay
   attached to the same step index.
+- Inline step editing now saves and exits when the field loses focus or the panel closes; Escape
+  and the explicit × still cancel without saving. Added Ratko-local `AGENTS.md` rules requiring
+  entry, save, cancel, outside-click, error, and live-update UX to be designed for every feature.
 
 ## [0.19.0] - 2026-08-27
 

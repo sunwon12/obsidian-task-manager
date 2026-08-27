@@ -330,12 +330,15 @@ struct FocusCard: View {
                             .font(.caption)
                             .focused($stepEditorFocused)
                             .onSubmit(saveEditedStep)
+                            .onExitCommand(perform: cancelEditingStep)
                         Button(action: saveEditedStep) { Image(systemName: "checkmark") }
                             .buttonStyle(.plain)
+                            .focusable(false)
                             .disabled(editingStepText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             .help("수정 저장")
                         Button(action: cancelEditingStep) { Image(systemName: "xmark") }
                             .buttonStyle(.plain)
+                            .focusable(false)
                             .help("수정 취소")
                     } else {
                         Button { beginEditingStep(index: index, text: step) } label: {
@@ -383,6 +386,12 @@ struct FocusCard: View {
         }
         .padding(12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .onChange(of: stepEditorFocused) { focused in
+            if !focused, editingStepIndex != nil { saveEditedStep() }
+        }
+        .onDisappear {
+            if editingStepIndex != nil { saveEditedStep() }
+        }
     }
 
     private var phaseLabel: String {
