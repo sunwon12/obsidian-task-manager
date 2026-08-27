@@ -19,8 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Swift quick panel has a visible bottom resize grip. Dragging it vertically grows or shrinks
   the task list while keeping the header and footer in place; the chosen height persists across
   panel and app reopen and is clamped to the current screen's usable height.
-- Current and upcoming Swift Ratko cards now expose visible drag handles. Cards can be reordered
-  within either list or moved across lists; crossing starts or pauses the timer and changes
+- Current and upcoming Swift Ratko cards can be dragged from their noninteractive card surfaces,
+  including status, timer, background, and empty space. Titles, steps, inputs, and action buttons
+  retain their click behavior. Cards can be reordered within either list or moved across lists;
+  crossing starts or pauses the timer and changes
   `DOING`/`TODO` without losing elapsed totals or step time. Mixed-status order persists in the
   optional `.board.json` `ratkoOrder`, and Obsidian preserves the latest on-disk value before writes.
 

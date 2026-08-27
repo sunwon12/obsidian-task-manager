@@ -386,114 +386,124 @@ struct FocusCard: View {
     @FocusState private var stepEditorFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                TaskDragHandle(taskId: task.id, draggingTaskId: $draggingTaskId)
-                Circle().fill(timer.phase == .running ? .green : timer.phase == .paused ? .orange : .gray)
-                    .frame(width: 7, height: 7)
-                Text(phaseLabel).font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                Text(formattedElapsed(store.elapsed(for: timer))).font(.system(.body, design: .monospaced)).bold()
-            }
-            HStack(alignment: .firstTextBaseline) {
-                Button(task.title) { store.openTask(task) }
-                    .buttonStyle(.plain).font(.headline).lineLimit(2)
-                Spacer()
-                Button {
-                    timer.phase == .running ? store.pause(task.id) : store.start(task.id)
-                } label: {
-                    Image(systemName: timer.phase == .running ? "pause.fill" : "play.fill")
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.regularMaterial)
+                .contentShape(RoundedRectangle(cornerRadius: 12))
+                .onDrag { dragProvider() }
+                .help("버튼과 입력칸을 제외한 카드 공간을 끌어 순서 바꾸기")
+                .accessibilityLabel("작업 카드 순서 바꾸기")
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Circle().fill(timer.phase == .running ? .green : timer.phase == .paused ? .orange : .gray)
+                        .frame(width: 7, height: 7)
+                    Text(phaseLabel).font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Text(formattedElapsed(store.elapsed(for: timer))).font(.system(.body, design: .monospaced)).bold()
                 }
-                .buttonStyle(.borderedProminent)
-                Button(role: .destructive) { store.stop(task.id) } label: {
-                    Image(systemName: "stop.fill")
+                .contentShape(Rectangle())
+                .onDrag { dragProvider() }
+                HStack(alignment: .firstTextBaseline) {
+                    Button(task.title) { store.openTask(task) }
+                        .buttonStyle(.plain).font(.headline).lineLimit(2)
+                    Spacer()
+                    Button {
+                        timer.phase == .running ? store.pause(task.id) : store.start(task.id)
+                    } label: {
+                        Image(systemName: timer.phase == .running ? "pause.fill" : "play.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Button(role: .destructive) { store.stop(task.id) } label: {
+                        Image(systemName: "stop.fill")
+                    }
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.bordered)
-            }
-            ForEach(Array(task.steps.enumerated()), id: \.offset) { index, step in
-                HStack(spacing: 7) {
-                    Button { store.selectStep(taskId: task.id, step: index + 1) } label: {
-                        Image(systemName: stepIcon(index))
-                            .foregroundStyle(task.currentStep == index + 1 ? Color.accentColor : Color.secondary)
-                    }.buttonStyle(.plain)
-                    if editingStepIndex == index {
-                        TextField("[인간] 설계 / [AI] 구현", text: $editingStepText)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.caption)
-                            .focused($stepEditorFocused)
-                            .onSubmit(saveEditedStep)
-                            .onExitCommand(perform: cancelEditingStep)
-                        Button(action: saveEditedStep) { Image(systemName: "checkmark") }
-                            .buttonStyle(.plain)
-                            .focusable(false)
-                            .disabled(editingStepText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                            .help("수정 저장")
-                        Button(action: cancelEditingStep) { Image(systemName: "xmark") }
-                            .buttonStyle(.plain)
-                            .focusable(false)
-                            .help("수정 취소")
-                    } else {
-                        Button { beginEditingStep(index: index, text: step) } label: {
-                            HStack(spacing: 3) {
-                                Text(step).font(.caption).lineLimit(2)
-                                Image(systemName: "pencil").font(.system(size: 8))
-                                    .foregroundStyle(.tertiary)
+                ForEach(Array(task.steps.enumerated()), id: \.offset) { index, step in
+                    HStack(spacing: 7) {
+                        Button { store.selectStep(taskId: task.id, step: index + 1) } label: {
+                            Image(systemName: stepIcon(index))
+                                .foregroundStyle(task.currentStep == index + 1 ? Color.accentColor : Color.secondary)
+                        }.buttonStyle(.plain)
+                        if editingStepIndex == index {
+                            TextField("[인간] 설계 / [AI] 구현", text: $editingStepText)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.caption)
+                                .focused($stepEditorFocused)
+                                .onSubmit(saveEditedStep)
+                                .onExitCommand(perform: cancelEditingStep)
+                            Button(action: saveEditedStep) { Image(systemName: "checkmark") }
+                                .buttonStyle(.plain)
+                                .focusable(false)
+                                .disabled(editingStepText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                .help("수정 저장")
+                            Button(action: cancelEditingStep) { Image(systemName: "xmark") }
+                                .buttonStyle(.plain)
+                                .focusable(false)
+                                .help("수정 취소")
+                        } else {
+                            Button { beginEditingStep(index: index, text: step) } label: {
+                                HStack(spacing: 3) {
+                                    Text(step).font(.caption).lineLimit(2)
+                                    Image(systemName: "pencil").font(.system(size: 8))
+                                        .foregroundStyle(.tertiary)
+                                }
                             }
+                            .buttonStyle(.plain)
+                            .help("단계 내용 수정")
+                            Spacer()
+                            Text(formattedElapsed(store.stepElapsed(for: timer, index: index)))
+                                .font(.system(.caption2, design: .monospaced)).foregroundStyle(.secondary)
+                                .contentShape(Rectangle())
+                                .onDrag { dragProvider() }
+                            Button { store.moveStep(taskId: task.id, from: index, offset: -1) } label: {
+                                Image(systemName: "chevron.up")
+                            }.buttonStyle(.plain).disabled(index == 0)
+                            Button { store.moveStep(taskId: task.id, from: index, offset: 1) } label: {
+                                Image(systemName: "chevron.down")
+                            }.buttonStyle(.plain).disabled(index == task.steps.count - 1)
                         }
-                        .buttonStyle(.plain)
-                        .help("단계 내용 수정")
-                        Spacer()
-                        Text(formattedElapsed(store.stepElapsed(for: timer, index: index)))
-                            .font(.system(.caption2, design: .monospaced)).foregroundStyle(.secondary)
-                        Button { store.moveStep(taskId: task.id, from: index, offset: -1) } label: {
-                            Image(systemName: "chevron.up")
-                        }.buttonStyle(.plain).disabled(index == 0)
-                        Button { store.moveStep(taskId: task.id, from: index, offset: 1) } label: {
-                            Image(systemName: "chevron.down")
-                        }.buttonStyle(.plain).disabled(index == task.steps.count - 1)
+                    }
+                }
+                HStack {
+                    TextField("[인간] 설계 / [AI] 구현", text: $newStep)
+                        .textFieldStyle(.roundedBorder).font(.caption).onSubmit(addStep)
+                    Button(action: addStep) { Image(systemName: "plus") }.buttonStyle(.borderless)
+                }
+                HStack {
+                    Button {
+                        store.requestTaskAiStepFill(task.id)
+                        openWindow(value: task.id)
+                    } label: {
+                        Label("AI 단계 채우기", systemImage: "sparkles")
+                    }
+                    .buttonStyle(.plain)
+                    Spacer()
+                    Button { openWindow(value: task.id) } label: {
+                        Label("AI와 대화", systemImage: "bubble.left.and.bubble.right")
+                    }
+                    .buttonStyle(.plain)
+                }
+                .font(.caption)
+                .foregroundStyle(.purple)
+                HStack {
+                    Button("잠시 내려놓기") { store.park(task.id) }.buttonStyle(.plain)
+                    Spacer()
+                    Button(showingMemo ? "메모 닫기" : "메모") { showingMemo.toggle() }.buttonStyle(.plain)
+                }
+                .font(.caption).foregroundStyle(.secondary)
+                if showingMemo {
+                    HStack(alignment: .bottom) {
+                        TextEditor(text: $memo).font(.caption).frame(minHeight: 50, maxHeight: 90)
+                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+                        Button("저장") {
+                            store.appendMemo(taskId: task.id, text: memo)
+                            memo = ""
+                        }.buttonStyle(.borderedProminent).disabled(memo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
             }
-            HStack {
-                TextField("[인간] 설계 / [AI] 구현", text: $newStep)
-                    .textFieldStyle(.roundedBorder).font(.caption).onSubmit(addStep)
-                Button(action: addStep) { Image(systemName: "plus") }.buttonStyle(.borderless)
-            }
-            HStack {
-                Button {
-                    store.requestTaskAiStepFill(task.id)
-                    openWindow(value: task.id)
-                } label: {
-                    Label("AI 단계 채우기", systemImage: "sparkles")
-                }
-                .buttonStyle(.plain)
-                Spacer()
-                Button { openWindow(value: task.id) } label: {
-                    Label("AI와 대화", systemImage: "bubble.left.and.bubble.right")
-                }
-                .buttonStyle(.plain)
-            }
-            .font(.caption)
-            .foregroundStyle(.purple)
-            HStack {
-                Button("잠시 내려놓기") { store.park(task.id) }.buttonStyle(.plain)
-                Spacer()
-                Button(showingMemo ? "메모 닫기" : "메모") { showingMemo.toggle() }.buttonStyle(.plain)
-            }
-            .font(.caption).foregroundStyle(.secondary)
-            if showingMemo {
-                HStack(alignment: .bottom) {
-                    TextEditor(text: $memo).font(.caption).frame(minHeight: 50, maxHeight: 90)
-                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
-                    Button("저장") {
-                        store.appendMemo(taskId: task.id, text: memo)
-                        memo = ""
-                    }.buttonStyle(.borderedProminent).disabled(memo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
+            .padding(12)
         }
-        .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
         .onChange(of: stepEditorFocused) { focused in
             if !focused, editingStepIndex != nil { saveEditedStep() }
         }
@@ -536,6 +546,11 @@ struct FocusCard: View {
         editingStepText = ""
         stepEditorFocused = false
     }
+
+    private func dragProvider() -> NSItemProvider {
+        draggingTaskId = task.id
+        return NSItemProvider(object: task.id as NSString)
+    }
 }
 
 private struct NextTaskRow: View {
@@ -545,49 +560,44 @@ private struct NextTaskRow: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        HStack(spacing: 8) {
-            TaskDragHandle(taskId: task.id, draggingTaskId: $draggingTaskId)
-            Text(statusLabel(task.status))
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 48, alignment: .leading)
-            Button(task.title) { store.openTask(task) }
-                .buttonStyle(.plain)
-                .lineLimit(1)
-            Spacer()
-            Button {
-                store.requestTaskAiStepFill(task.id)
-                openWindow(value: task.id)
-            } label: { Image(systemName: "sparkles") }
-                .buttonStyle(.borderless).help("AI 단계 채우기")
-            Button { openWindow(value: task.id) } label: {
-                Image(systemName: "bubble.left.and.bubble.right")
+        ZStack {
+            RoundedRectangle(cornerRadius: 7)
+                .fill(Color.primary.opacity(0.001))
+                .contentShape(RoundedRectangle(cornerRadius: 7))
+                .onDrag { dragProvider() }
+                .help("버튼을 제외한 카드 공간을 끌어 순서 바꾸기")
+                .accessibilityLabel("작업 카드 순서 바꾸기")
+            HStack(spacing: 8) {
+                Text(statusLabel(task.status))
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 48, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onDrag { dragProvider() }
+                Button(task.title) { store.openTask(task) }
+                    .buttonStyle(.plain)
+                    .lineLimit(1)
+                Spacer()
+                Button {
+                    store.requestTaskAiStepFill(task.id)
+                    openWindow(value: task.id)
+                } label: { Image(systemName: "sparkles") }
+                    .buttonStyle(.borderless).help("AI 단계 채우기")
+                Button { openWindow(value: task.id) } label: {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                }
+                .buttonStyle(.borderless).help("이 태스크로 AI와 대화")
+                Button { store.focus(task.id) } label: { Image(systemName: "play.fill") }
+                    .buttonStyle(.borderless).help("집중 시작")
             }
-            .buttonStyle(.borderless).help("이 태스크로 AI와 대화")
-            Button { store.focus(task.id) } label: { Image(systemName: "play.fill") }
-                .buttonStyle(.borderless).help("집중 시작")
+            .padding(.vertical, 4)
+            .padding(.horizontal, 2)
         }
-        .padding(.vertical, 4)
-        .contentShape(Rectangle())
     }
-}
 
-private struct TaskDragHandle: View {
-    let taskId: String
-    @Binding var draggingTaskId: String?
-
-    var body: some View {
-        Image(systemName: "line.3.horizontal")
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
-            .frame(width: 14, height: 22)
-            .contentShape(Rectangle())
-            .onDrag {
-                draggingTaskId = taskId
-                return NSItemProvider(object: taskId as NSString)
-            }
-            .help("끌어서 작업 순서 바꾸기")
-            .accessibilityLabel("작업 순서 바꾸기")
+    private func dragProvider() -> NSItemProvider {
+        draggingTaskId = task.id
+        return NSItemProvider(object: task.id as NSString)
     }
 }
 
