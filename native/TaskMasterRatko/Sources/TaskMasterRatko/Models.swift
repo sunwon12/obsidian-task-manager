@@ -9,6 +9,37 @@ enum TaskStatus: String, CaseIterable, Codable {
     case done
 }
 
+enum RatkoTaskList {
+    case focus
+    case next
+}
+
+struct RatkoTaskOrder: Equatable {
+    var focusTaskIds: [String]
+    var nextTaskIds: [String]
+
+    static let empty = RatkoTaskOrder(focusTaskIds: [], nextTaskIds: [])
+
+    mutating func move(_ taskId: String, to list: RatkoTaskList, before beforeTaskId: String?) {
+        focusTaskIds.removeAll { $0 == taskId }
+        nextTaskIds.removeAll { $0 == taskId }
+        switch list {
+        case .focus:
+            Self.insert(taskId, before: beforeTaskId, into: &focusTaskIds)
+        case .next:
+            Self.insert(taskId, before: beforeTaskId, into: &nextTaskIds)
+        }
+    }
+
+    private static func insert(_ taskId: String, before beforeTaskId: String?, into ids: inout [String]) {
+        if let beforeTaskId, let index = ids.firstIndex(of: beforeTaskId) {
+            ids.insert(taskId, at: index)
+        } else {
+            ids.append(taskId)
+        }
+    }
+}
+
 struct TaskCard: Identifiable, Equatable {
     let id: String
     var title: String

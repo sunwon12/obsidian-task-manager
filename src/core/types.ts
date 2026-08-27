@@ -132,11 +132,20 @@ export interface BoardColumn {
   taskIds: TaskId[];
 }
 
+export interface RatkoTaskOrder {
+  /** Swift 랏코의 현재 작업 표시 순서. 상태 정본은 Markdown이다. */
+  focusTaskIds: TaskId[];
+  /** 여러 status를 한 목록에 섞어 보여 주는 다음 태스크 표시 순서. */
+  nextTaskIds: TaskId[];
+}
+
 export interface BoardState {
   version: 1;
   /** 항상 TASK_STATUS_ORDER 순서 */
   columns: BoardColumn[];
   updatedAt: IsoDateTime;
+  /** Swift 랏코 전용 혼합 목록 순서. Obsidian은 보존·drift 정리만 한다. */
+  ratkoOrder?: RatkoTaskOrder;
 }
 
 // ---------- Frontmatter wire types ----------

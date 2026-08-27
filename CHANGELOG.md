@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Swift quick panel has a visible bottom resize grip. Dragging it vertically grows or shrinks
   the task list while keeping the header and footer in place; the chosen height persists across
   panel and app reopen and is clamped to the current screen's usable height.
+- Current and upcoming Swift Ratko cards now expose visible drag handles. Cards can be reordered
+  within either list or moved across lists; crossing starts or pauses the timer and changes
+  `DOING`/`TODO` without losing elapsed totals or step time. Mixed-status order persists in the
+  optional `.board.json` `ratkoOrder`, and Obsidian preserves the latest on-disk value before writes.
 
 ### Changed
 
@@ -33,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   park it off-screen.
 - The Ratko installer now stops an already running copy before replacing and reopening the app, so
   an update cannot leave the previous binary running until the next login.
+- The installer ad-hoc signs the completed app bundle after writing `Info.plist` and resources,
+  preventing macOS RBS/POSIX 162 launch failures after an in-place binary replacement.
 - Replaced the temporary otter emoji in the Swift menu bar and panel header with TaskMaster's
   original full-color Ratko artwork, packaged from the existing `src/assets` files.
 - Sized the visually dense, full-color menu-bar artwork to 14 points so it matches the perceived

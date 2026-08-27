@@ -7,6 +7,7 @@ struct TaskMarkdownRepository {
 
     var tasksURL: URL { vaultURL.appendingPathComponent(dataRoot).appendingPathComponent("Tasks") }
     var timersURL: URL { vaultURL.appendingPathComponent(dataRoot).appendingPathComponent(".timers.json") }
+    var boardURL: URL { vaultURL.appendingPathComponent(dataRoot).appendingPathComponent(".board.json") }
 
     func loadTasks() throws -> [TaskCard] {
         guard fileManager.fileExists(atPath: tasksURL.path) else { return [] }
@@ -138,6 +139,72 @@ struct TaskMarkdownRepository {
         try data.write(to: timersURL, options: .atomic)
     }
 
+    func loadRatkoTaskOrder(tasks: [TaskCard]) throws -> RatkoTaskOrder {
+        let board = try loadBoardObject()
+        let ratko = board?["ratkoOrder"] as? [String: Any]
+        let stored = RatkoTaskOrder(
+            focusTaskIds: ratko?["focusTaskIds"] as? [String] ?? [],
+            nextTaskIds: ratko?["nextTaskIds"] as? [String] ?? []
+        )
+        return reconcileRatkoTaskOrder(stored, board: board, tasks: tasks)
+    }
+
+    func saveRatkoTaskOrder(_ order: RatkoTaskOrder, tasks: [TaskCard]) throws {
+        try fileManager.createDirectory(at: boardURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var board = (try loadBoardObject()) ?? Self.emptyBoard()
+        let reconciled = reconcileRatkoTaskOrder(order, board: board, tasks: tasks)
+        board["ratkoOrder"] = [
+            "focusTaskIds": reconciled.focusTaskIds,
+            "nextTaskIds": reconciled.nextTaskIds,
+        ]
+        board["updatedAt"] = Self.isoNow()
+
+        let previousColumns = board["columns"] as? [[String: Any]] ?? []
+        let existingByStatus = Dictionary(uniqueKeysWithValues: previousColumns.compactMap { column -> (String, [String])? in
+            guard let id = column["id"] as? String else { return nil }
+            return (id, column["taskIds"] as? [String] ?? [])
+        })
+        let preferred = reconciled.focusTaskIds + reconciled.nextTaskIds
+        board["columns"] = TaskStatus.allCases.map { status -> [String: Any] in
+            let valid = Set(tasks.filter { $0.status == status }.map(\.id))
+            let ordered = Self.unique(
+                preferred.filter(valid.contains)
+                    + (existingByStatus[status.rawValue] ?? []).filter(valid.contains)
+                    + tasks.filter { $0.status == status }.map(\.id)
+            )
+            return [
+                "id": status.rawValue,
+                "title": Self.boardTitle(for: status),
+                "taskIds": ordered,
+            ]
+        }
+
+        let data = try JSONSerialization.data(withJSONObject: board, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: boardURL, options: .atomic)
+    }
+
+    func reconcileRatkoTaskOrder(
+        _ stored: RatkoTaskOrder,
+        board: [String: Any]?,
+        tasks: [TaskCard]
+    ) -> RatkoTaskOrder {
+        let activeTasks = tasks.filter { $0.status != .done }
+        let focusIds = Set(activeTasks.filter { $0.status == .doing }.map(\.id))
+        let nextIds = Set(activeTasks.filter { $0.status != .doing }.map(\.id))
+        let columns = board?["columns"] as? [[String: Any]] ?? []
+        let columnIds = Dictionary(uniqueKeysWithValues: columns.compactMap { column -> (String, [String])? in
+            guard let id = column["id"] as? String else { return nil }
+            return (id, column["taskIds"] as? [String] ?? [])
+        })
+        let boardIds = [TaskStatus.doing, .inReview, .todo, .hold, .backlog]
+            .flatMap { columnIds[$0.rawValue] ?? [] }
+        let fallback = boardIds + activeTasks.map(\.id)
+        return RatkoTaskOrder(
+            focusTaskIds: Self.unique(stored.focusTaskIds.filter(focusIds.contains) + fallback.filter(focusIds.contains)),
+            nextTaskIds: Self.unique(stored.nextTaskIds.filter(nextIds.contains) + fallback.filter(nextIds.contains))
+        )
+    }
+
     func appendMemo(to task: TaskCard, text: String, now: Date = Date()) throws -> TaskCard {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return task }
@@ -160,6 +227,38 @@ struct TaskMarkdownRepository {
 
     static func isoNow() -> String {
         ISO8601DateFormatter().string(from: Date())
+    }
+
+    private func loadBoardObject() throws -> [String: Any]? {
+        guard fileManager.fileExists(atPath: boardURL.path) else { return nil }
+        let value = try JSONSerialization.jsonObject(with: Data(contentsOf: boardURL))
+        return value as? [String: Any]
+    }
+
+    private static func emptyBoard() -> [String: Any] {
+        [
+            "version": 1,
+            "columns": TaskStatus.allCases.map { status in
+                ["id": status.rawValue, "title": boardTitle(for: status), "taskIds": []] as [String: Any]
+            },
+            "updatedAt": isoNow(),
+        ]
+    }
+
+    private static func boardTitle(for status: TaskStatus) -> String {
+        switch status {
+        case .backlog: "BACKLOG"
+        case .hold: "HOLD"
+        case .todo: "TODO"
+        case .doing: "DOING"
+        case .inReview: "IN REVIEW"
+        case .done: "DONE"
+        }
+    }
+
+    private static func unique(_ ids: [String]) -> [String] {
+        var seen = Set<String>()
+        return ids.filter { seen.insert($0).inserted }
     }
 
     private static func number(_ value: Double) -> String {

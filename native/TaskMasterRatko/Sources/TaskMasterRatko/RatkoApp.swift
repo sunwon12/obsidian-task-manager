@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum RatkoPanelSizing {
     static let minimumHeight = 360.0
@@ -59,6 +60,7 @@ struct RatkoPanel: View {
     @Environment(\.openWindow) private var openWindow
     @State private var newTask = ""
     @State private var feedbackExpanded = false
+    @State private var draggingTaskId: String?
     @AppStorage("ratko.panel.height") private var panelHeight = RatkoPanelSizing.defaultHeight
     @State private var resizeStartHeight: Double?
 
@@ -203,38 +205,44 @@ struct RatkoPanel: View {
                 .frame(maxWidth: .infinity).padding(.vertical, 18)
             } else {
                 ForEach(store.focusTasks, id: \.0.id) { task, timer in
-                    FocusCard(store: store, task: task, timer: timer)
+                    FocusCard(store: store, task: task, timer: timer, draggingTaskId: $draggingTaskId)
+                        .onDrop(
+                            of: [.plainText],
+                            delegate: TaskDropDelegate(
+                                store: store,
+                                targetList: .focus,
+                                beforeTaskId: task.id,
+                                draggingTaskId: $draggingTaskId
+                            )
+                        )
                 }
             }
         }
+        .onDrop(
+            of: [.plainText],
+            delegate: TaskDropDelegate(
+                store: store,
+                targetList: .focus,
+                beforeTaskId: nil,
+                draggingTaskId: $draggingTaskId
+            )
+        )
     }
 
     private var nextSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             sectionHeader("다음 할 일", count: store.nextTasks.count)
             ForEach(store.nextTasks) { task in
-                HStack(spacing: 8) {
-                    Text(statusLabel(task.status))
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 54, alignment: .leading)
-                    Button(task.title) { store.openTask(task) }
-                        .buttonStyle(.plain)
-                        .lineLimit(1)
-                    Spacer()
-                    Button {
-                        store.requestTaskAiStepFill(task.id)
-                        openWindow(value: task.id)
-                    } label: { Image(systemName: "sparkles") }
-                        .buttonStyle(.borderless).help("AI 단계 채우기")
-                    Button { openWindow(value: task.id) } label: {
-                        Image(systemName: "bubble.left.and.bubble.right")
-                    }
-                    .buttonStyle(.borderless).help("이 태스크로 AI와 대화")
-                    Button { store.focus(task.id) } label: { Image(systemName: "play.fill") }
-                        .buttonStyle(.borderless).help("집중 시작")
-                }
-                .padding(.vertical, 4)
+                NextTaskRow(store: store, task: task, draggingTaskId: $draggingTaskId)
+                    .onDrop(
+                        of: [.plainText],
+                        delegate: TaskDropDelegate(
+                            store: store,
+                            targetList: .next,
+                            beforeTaskId: task.id,
+                            draggingTaskId: $draggingTaskId
+                        )
+                    )
             }
             HStack {
                 TextField("새 작업", text: $newTask)
@@ -245,6 +253,15 @@ struct RatkoPanel: View {
             }
             .padding(.top, 2)
         }
+        .onDrop(
+            of: [.plainText],
+            delegate: TaskDropDelegate(
+                store: store,
+                targetList: .next,
+                beforeTaskId: nil,
+                draggingTaskId: $draggingTaskId
+            )
+        )
     }
 
     private var footer: some View {
@@ -359,6 +376,7 @@ struct FocusCard: View {
     @ObservedObject var store: RatkoStore
     let task: TaskCard
     let timer: TimerRecord
+    @Binding var draggingTaskId: String?
     @Environment(\.openWindow) private var openWindow
     @State private var newStep = ""
     @State private var memo = ""
@@ -370,6 +388,7 @@ struct FocusCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
+                TaskDragHandle(taskId: task.id, draggingTaskId: $draggingTaskId)
                 Circle().fill(timer.phase == .running ? .green : timer.phase == .paused ? .orange : .gray)
                     .frame(width: 7, height: 7)
                 Text(phaseLabel).font(.caption).foregroundStyle(.secondary)
@@ -516,6 +535,85 @@ struct FocusCard: View {
         editingStepIndex = nil
         editingStepText = ""
         stepEditorFocused = false
+    }
+}
+
+private struct NextTaskRow: View {
+    @ObservedObject var store: RatkoStore
+    let task: TaskCard
+    @Binding var draggingTaskId: String?
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        HStack(spacing: 8) {
+            TaskDragHandle(taskId: task.id, draggingTaskId: $draggingTaskId)
+            Text(statusLabel(task.status))
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 48, alignment: .leading)
+            Button(task.title) { store.openTask(task) }
+                .buttonStyle(.plain)
+                .lineLimit(1)
+            Spacer()
+            Button {
+                store.requestTaskAiStepFill(task.id)
+                openWindow(value: task.id)
+            } label: { Image(systemName: "sparkles") }
+                .buttonStyle(.borderless).help("AI 단계 채우기")
+            Button { openWindow(value: task.id) } label: {
+                Image(systemName: "bubble.left.and.bubble.right")
+            }
+            .buttonStyle(.borderless).help("이 태스크로 AI와 대화")
+            Button { store.focus(task.id) } label: { Image(systemName: "play.fill") }
+                .buttonStyle(.borderless).help("집중 시작")
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct TaskDragHandle: View {
+    let taskId: String
+    @Binding var draggingTaskId: String?
+
+    var body: some View {
+        Image(systemName: "line.3.horizontal")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .frame(width: 14, height: 22)
+            .contentShape(Rectangle())
+            .onDrag {
+                draggingTaskId = taskId
+                return NSItemProvider(object: taskId as NSString)
+            }
+            .help("끌어서 작업 순서 바꾸기")
+            .accessibilityLabel("작업 순서 바꾸기")
+    }
+}
+
+private struct TaskDropDelegate: DropDelegate {
+    let store: RatkoStore
+    let targetList: RatkoTaskList
+    let beforeTaskId: String?
+    @Binding var draggingTaskId: String?
+
+    func validateDrop(info: DropInfo) -> Bool {
+        draggingTaskId != nil
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let taskId = draggingTaskId else { return false }
+        if taskId == beforeTaskId {
+            draggingTaskId = nil
+            return true
+        }
+        store.moveTask(taskId, to: targetList, before: beforeTaskId)
+        draggingTaskId = nil
+        return true
     }
 }
 

@@ -43,6 +43,10 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 </dict></plist>
 PLIST
 
+# SwiftPM 산출물은 실행 파일만 linker-sign되어 Info.plist가 서명에 묶이지 않는다.
+# 실행 중 앱 번들을 교체한 직후 RBS가 POSIX 162로 재실행을 거부하지 않게 완성된 번들을 다시 서명한다.
+codesign --force --deep --sign - "$APP_DIR"
+
 /usr/bin/python3 - "$CONFIG_DIR/config.json" "$VAULT_PATH" <<'PY'
 import json, pathlib, sys
 path = pathlib.Path(sys.argv[1])

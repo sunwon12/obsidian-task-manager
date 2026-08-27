@@ -6,6 +6,7 @@ import Foundation
 final class RatkoStore: ObservableObject {
     @Published private(set) var tasks: [TaskCard] = []
     @Published private(set) var timers: [TimerRecord] = []
+    @Published private(set) var taskOrder: RatkoTaskOrder = .empty
     @Published private(set) var now = Date()
     @Published private(set) var aiFeedback: AiFeedback?
     @Published private(set) var aiFeedbackState: AiFeedbackRunState = .idle
@@ -48,23 +49,25 @@ final class RatkoStore: ObservableObject {
 
     var focusTasks: [(TaskCard, TimerRecord)] {
         let taskById = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
-        return timers
-            .sorted { $0.enteredDoingAt > $1.enteredDoingAt }
-            .compactMap { timer in taskById[timer.taskId].map { ($0, timer) } }
+        let timerById = Dictionary(uniqueKeysWithValues: timers.map { ($0.taskId, $0) })
+        let fallback = timers.sorted { $0.enteredDoingAt > $1.enteredDoingAt }.map(\.taskId)
+        return uniqueTaskIds(taskOrder.focusTaskIds + fallback).compactMap { taskId in
+            guard let task = taskById[taskId], task.status == .doing, let timer = timerById[taskId] else { return nil }
+            return (task, timer)
+        }
     }
 
     var nextTasks: [TaskCard] {
-        let active = Set(timers.map(\.taskId))
-        let order: [TaskStatus: Int] = [.inReview: 0, .todo: 1, .hold: 2, .backlog: 3, .doing: 4, .done: 5]
-        return tasks
-            .filter { $0.status != .done && !active.contains($0.id) }
+        let statusOrder: [TaskStatus: Int] = [.inReview: 0, .todo: 1, .hold: 2, .backlog: 3, .doing: 4, .done: 5]
+        let candidates = tasks
+            .filter { $0.status != .done && $0.status != .doing }
             .sorted {
-                let left = order[$0.status] ?? 9
-                let right = order[$1.status] ?? 9
+                let left = statusOrder[$0.status] ?? 9
+                let right = statusOrder[$1.status] ?? 9
                 return left == right ? $0.updatedAt > $1.updatedAt : left < right
             }
-            .prefix(6)
-            .map { $0 }
+        let byId = Dictionary(uniqueKeysWithValues: candidates.map { ($0.id, $0) })
+        return uniqueTaskIds(taskOrder.nextTaskIds + candidates.map(\.id)).compactMap { byId[$0] }
     }
 
     var doneToday: Int {
@@ -121,9 +124,11 @@ final class RatkoStore: ObservableObject {
         do {
             let diskTasks = try repository.loadTasks()
             var diskTimers = try repository.loadTimers()
-            let doing = Dictionary(uniqueKeysWithValues: diskTasks.filter { $0.status == .doing }.map { ($0.id, $0) })
+            let diskOrder = try repository.loadRatkoTaskOrder(tasks: diskTasks)
+            let active = Dictionary(uniqueKeysWithValues: diskTasks.filter { $0.status != .done }.map { ($0.id, $0) })
+            let doing = active.filter { $0.value.status == .doing }
             let before = diskTimers
-            diskTimers.removeAll { doing[$0.taskId] == nil }
+            diskTimers.removeAll { active[$0.taskId] == nil }
             for task in doing.values where !diskTimers.contains(where: { $0.taskId == task.id }) {
                 diskTimers.append(TimerRecord(
                     taskId: task.id,
@@ -132,12 +137,19 @@ final class RatkoStore: ObservableObject {
                 ))
             }
             for index in diskTimers.indices {
-                guard let task = doing[diskTimers[index].taskId] else { continue }
+                guard let task = active[diskTimers[index].taskId] else { continue }
                 diskTimers[index].stepAccumulatedMs = normalizedStepMilliseconds(
                     timer: diskTimers[index],
                     task: task
                 )
-                if let current = task.currentStep, current != diskTimers[index].activeStep,
+                if task.status != .doing, diskTimers[index].phase == .running {
+                    let timestamp = Date().millisecondsSince1970
+                    let total = elapsedMilliseconds(for: diskTimers[index], now: timestamp)
+                    Self.capture(timer: &diskTimers[index], at: timestamp)
+                    diskTimers[index].accumulatedMs = total
+                    diskTimers[index].runningSince = nil
+                    diskTimers[index].phase = .paused
+                } else if let current = task.currentStep, current != diskTimers[index].activeStep,
                    diskTimers[index].phase != .running {
                     diskTimers[index].activeStep = current
                 }
@@ -145,6 +157,7 @@ final class RatkoStore: ObservableObject {
             if diskTimers != before { try repository.saveTimers(diskTimers) }
             if diskTasks != tasks { tasks = diskTasks }
             if diskTimers != timers { timers = diskTimers }
+            if diskOrder != taskOrder { taskOrder = diskOrder }
             reloadAiFeedback()
             lastError = nil
         } catch {
@@ -299,12 +312,72 @@ final class RatkoStore: ObservableObject {
     }
 
     func park(_ taskId: String) {
-        pause(taskId)
-        setStatus(taskId, status: .todo, startTimer: false)
+        moveTask(taskId, to: .next, before: nil)
     }
 
     func focus(_ taskId: String) {
-        setStatus(taskId, status: .doing, startTimer: true)
+        moveTask(taskId, to: .focus, before: nil)
+    }
+
+    func moveTask(_ taskId: String, to list: RatkoTaskList, before beforeTaskId: String?) {
+        guard taskId != beforeTaskId,
+              let repository,
+              let task = tasks.first(where: { $0.id == taskId }),
+              task.status != .done
+        else { return }
+        do {
+            var updatedTasks = tasks
+            var updatedTimers = timers
+            var updatedOrder = taskOrder
+            let movingToFocus = list == .focus
+
+            if movingToFocus, task.status != .doing {
+                let updatedTask = try repository.updateTask(task, status: .doing)
+                if let index = updatedTasks.firstIndex(where: { $0.id == taskId }) { updatedTasks[index] = updatedTask }
+                var timer = updatedTimers.first(where: { $0.taskId == taskId }) ?? TimerRecord(
+                    taskId: taskId,
+                    stepAccumulatedMs: task.stepSeconds.map { Double($0) * 1_000 },
+                    activeStep: task.currentStep
+                )
+                let timestamp = Date().millisecondsSince1970
+                timer.phase = .running
+                timer.runningSince = timestamp
+                timer.stepRunningSince = timer.activeStep == nil ? nil : timestamp
+                updatedTimers.removeAll { $0.taskId == taskId }
+                updatedTimers.append(timer)
+            } else if !movingToFocus, task.status == .doing {
+                let timestamp = Date().millisecondsSince1970
+                var seconds = task.stepSeconds
+                var pausedTimer = updatedTimers.first(where: { $0.taskId == taskId })
+                if var timer = pausedTimer {
+                    if timer.phase == .running {
+                        let total = elapsedMilliseconds(for: timer, now: timestamp)
+                        Self.capture(timer: &timer, at: timestamp)
+                        timer.accumulatedMs = total
+                        timer.runningSince = nil
+                        timer.phase = .paused
+                    }
+                    seconds = stepSeconds(timer, count: task.steps.count, now: timestamp)
+                    pausedTimer = timer
+                }
+                let updatedTask = try repository.updateTask(task, status: .todo, stepSeconds: seconds)
+                if let index = updatedTasks.firstIndex(where: { $0.id == taskId }) { updatedTasks[index] = updatedTask }
+                updatedTimers.removeAll { $0.taskId == taskId }
+                if let pausedTimer { updatedTimers.append(pausedTimer) }
+            }
+
+            updatedOrder.move(taskId, to: list, before: beforeTaskId)
+            try repository.saveTimers(updatedTimers)
+            try repository.saveRatkoTaskOrder(updatedOrder, tasks: updatedTasks)
+            tasks = updatedTasks
+            timers = updatedTimers
+            taskOrder = updatedOrder
+            lastError = nil
+            reload()
+        } catch {
+            lastError = "순서를 바꾸지 못했습니다: \(error.localizedDescription)"
+            reload()
+        }
     }
 
     func createTask(title: String) {
@@ -409,32 +482,6 @@ final class RatkoStore: ObservableObject {
         return String(url.standardizedFileURL.path.dropFirst(configuration.vaultURL.path.count + 1))
     }
 
-    private func setStatus(_ taskId: String, status: TaskStatus, startTimer: Bool) {
-        guard let repository, let task = tasks.first(where: { $0.id == taskId }) else { return }
-        do {
-            _ = try repository.updateTask(task, status: status)
-            if status == .doing {
-                var timer = timers.first(where: { $0.taskId == taskId }) ?? TimerRecord(
-                    taskId: taskId,
-                    stepAccumulatedMs: task.stepSeconds.map { Double($0) * 1_000 },
-                    activeStep: task.currentStep
-                )
-                if startTimer && timer.phase != .running {
-                    let timestamp = Date().millisecondsSince1970
-                    timer.phase = .running
-                    timer.runningSince = timestamp
-                    timer.stepRunningSince = timer.activeStep == nil ? nil : timestamp
-                }
-                timers.removeAll { $0.taskId == taskId }
-                timers.append(timer)
-            } else {
-                timers.removeAll { $0.taskId == taskId }
-            }
-            try repository.saveTimers(timers)
-            reload()
-        } catch { lastError = error.localizedDescription }
-    }
-
     private func mutateTimer(
         _ taskId: String,
         saveSteps: Bool = false,
@@ -498,5 +545,10 @@ final class RatkoStore: ObservableObject {
             timer.stepAccumulatedMs[step - 1] += max(0, timestamp - since)
         }
         timer.stepRunningSince = nil
+    }
+
+    private func uniqueTaskIds(_ ids: [String]) -> [String] {
+        var seen = Set<String>()
+        return ids.filter { seen.insert($0).inserted }
     }
 }

@@ -85,6 +85,68 @@ final class TaskMarkdownRepositoryTests: XCTestCase {
         XCTAssertEqual(task.title, "새 작업")
     }
 
+    func testRatkoOrderMovesWithinAndAcrossLists() {
+        var order = RatkoTaskOrder(
+            focusTaskIds: ["focus-a", "focus-b"],
+            nextTaskIds: ["next-a", "next-b"]
+        )
+
+        order.move("focus-b", to: .focus, before: "focus-a")
+        XCTAssertEqual(order.focusTaskIds, ["focus-b", "focus-a"])
+        order.move("next-b", to: .focus, before: "focus-a")
+        XCTAssertEqual(order.focusTaskIds, ["focus-b", "next-b", "focus-a"])
+        XCTAssertEqual(order.nextTaskIds, ["next-a"])
+    }
+
+    func testRatkoOrderPersistsInBoardAndPreservesUnknownFields() throws {
+        let doing = try fixture()
+        let todo = try repository.createTask(title: "다음 작업")
+        let board: [String: Any] = [
+            "version": 1,
+            "columns": [
+                ["id": "todo", "title": "TODO", "taskIds": [todo.id]],
+                ["id": "doing", "title": "DOING", "taskIds": [doing.id]],
+            ],
+            "updatedAt": "2026-08-27T00:00:00Z",
+            "externalField": ["keep": true],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: board)
+        try data.write(to: repository.boardURL)
+
+        let order = RatkoTaskOrder(focusTaskIds: [doing.id], nextTaskIds: [todo.id])
+        try repository.saveRatkoTaskOrder(order, tasks: [doing, todo])
+
+        XCTAssertEqual(try repository.loadRatkoTaskOrder(tasks: [doing, todo]), order)
+        let saved = try JSONSerialization.jsonObject(with: Data(contentsOf: repository.boardURL)) as? [String: Any]
+        let external = saved?["externalField"] as? [String: Any]
+        XCTAssertEqual(external?["keep"] as? Bool, true)
+    }
+
+    @MainActor
+    func testDraggingAcrossListsChangesStatusAndTimer() throws {
+        let doing = try fixture()
+        let todo = try repository.createTask(title: "드래그할 작업")
+        let store = RatkoStore(configuration: RatkoConfiguration(vaultPath: root.path))
+
+        store.moveTask(todo.id, to: .focus, before: doing.id)
+
+        XCTAssertEqual(store.focusTasks.first?.0.id, todo.id)
+        XCTAssertEqual(try repository.parseTask(at: todo.url).status, .doing)
+        XCTAssertEqual(store.timer(for: todo.id)?.phase, .running)
+
+        store.start(doing.id)
+        store.moveTask(doing.id, to: .next, before: nil)
+
+        XCTAssertEqual(try repository.parseTask(at: doing.url).status, .todo)
+        XCTAssertEqual(store.timer(for: doing.id)?.phase, .paused)
+        XCTAssertTrue(store.nextTasks.contains { $0.id == doing.id })
+
+        let parkedElapsed = store.timer(for: doing.id)?.accumulatedMs
+        store.moveTask(doing.id, to: .focus, before: nil)
+        XCTAssertEqual(store.timer(for: doing.id)?.phase, .running)
+        XCTAssertEqual(store.timer(for: doing.id)?.accumulatedMs, parkedElapsed)
+    }
+
     func testPinsMenuBarItemImmediatelyLeftOfWiFi() {
         let ratkoSuite = "ratko-placement-\(UUID().uuidString)"
         let controlCenterSuite = "ratko-control-center-\(UUID().uuidString)"

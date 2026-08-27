@@ -178,6 +178,36 @@ describe("BoardRepository.reconcile", () => {
     ]);
     expect(taskIds(out, "todo")).toEqual([]);
   });
+
+  it("preserves Ratko order and reconciles changed statuses", () => {
+    const app = new App();
+    const { repo } = makeRepo(app);
+    const focus = newId("task") as TaskId;
+    const movedToNext = newId("task") as TaskId;
+    const next = newId("task") as TaskId;
+    const ghost = newId("task") as TaskId;
+    const loaded: BoardState = {
+      version: 1,
+      columns: [
+        { id: "todo", title: "Todo", taskIds: [next] },
+        { id: "doing", title: "Doing", taskIds: [focus, movedToNext] },
+      ],
+      updatedAt: "2026-05-08T00:00:00.000Z" as IsoDateTime,
+      ratkoOrder: {
+        focusTaskIds: [movedToNext, focus, ghost],
+        nextTaskIds: [next],
+      },
+    };
+
+    const out = repo.reconcile(loaded, [
+      makeTask(focus, { status: "doing" }),
+      makeTask(movedToNext, { status: "todo" }),
+      makeTask(next, { status: "todo" }),
+    ]);
+
+    expect(out.ratkoOrder?.focusTaskIds).toEqual([focus]);
+    expect(out.ratkoOrder?.nextTaskIds).toEqual([next, movedToNext]);
+  });
 });
 
 // ---------- T-208 sync conflict + flush ----------
@@ -237,6 +267,26 @@ describe("BoardRepository.resolveSyncConflict", () => {
     const merged = repo.resolveSyncConflict(local, remote);
     expect(taskIds(merged, "todo")).toEqual([id1, id2]); // winner 순서 유지
   });
+
+  it("does not drop Ratko order during sync conflict resolution", () => {
+    const app = new App();
+    const { repo } = makeRepo(app);
+    const id1 = newId("task") as TaskId;
+    const id2 = newId("task") as TaskId;
+    const base: BoardState = {
+      version: 1,
+      columns: [{ id: "todo", title: "Todo", taskIds: [id1, id2] }],
+      updatedAt: "2026-05-09T00:00:00.000Z" as IsoDateTime,
+      ratkoOrder: { focusTaskIds: [], nextTaskIds: [id2, id1] },
+    };
+    const remote: BoardState = {
+      ...base,
+      updatedAt: "2026-05-08T00:00:00.000Z" as IsoDateTime,
+      ratkoOrder: { focusTaskIds: [], nextTaskIds: [id1] },
+    };
+
+    expect(repo.resolveSyncConflict(base, remote).ratkoOrder?.nextTaskIds).toEqual([id2, id1]);
+  });
 });
 
 describe("BoardRepository.queueWrite + flush", () => {
@@ -284,6 +334,32 @@ describe("BoardRepository.queueWrite + flush", () => {
 
     const content = await app.vault.adapter.read(BOARD_PATH);
     expect(content).toContain('"updatedAt": "t2"');
+    vi.useRealTimers();
+  });
+
+  it("preserves the latest Swift Ratko order when an older plugin board is flushed", async () => {
+    vi.useFakeTimers();
+    const app = new App();
+    const { repo } = makeRepo(app);
+    const id1 = newId("task") as TaskId;
+    const id2 = newId("task") as TaskId;
+    const stalePluginBoard: BoardState = {
+      version: 1,
+      columns: [{ id: "todo", title: "Todo", taskIds: [id1, id2] }],
+      updatedAt: "2026-08-27T00:00:00.000Z" as IsoDateTime,
+    };
+    const swiftBoard: BoardState = {
+      ...stalePluginBoard,
+      updatedAt: "2026-08-27T00:00:01.000Z" as IsoDateTime,
+      ratkoOrder: { focusTaskIds: [], nextTaskIds: [id2, id1] },
+    };
+    await app.vault.adapter.write(BOARD_PATH, JSON.stringify(swiftBoard));
+
+    repo.queueWrite(stalePluginBoard);
+    await vi.advanceTimersByTimeAsync(DEBOUNCE + 50);
+
+    const persisted = JSON.parse(await app.vault.adapter.read(BOARD_PATH)) as BoardState;
+    expect(persisted.ratkoOrder?.nextTaskIds).toEqual([id2, id1]);
     vi.useRealTimers();
   });
 });

@@ -12,7 +12,7 @@ import type { DiagnosticsLog } from "../core/diagnostics";
 import { nowIso } from "../core/time";
 import { DEFAULT_BOARD_COLUMN_DEFS, isTaskStatus } from "../core/types";
 import type {
-  BoardColumn, BoardState, ColumnId, Task, TaskId,
+  BoardColumn, BoardState, ColumnId, RatkoTaskOrder, Task, TaskId,
 } from "../core/types";
 
 const COLUMN_DEFS = DEFAULT_BOARD_COLUMN_DEFS;
@@ -113,7 +113,15 @@ export class BoardRepository {
       column?.taskIds.push(t.id);
     }
 
-    return { version: 1, columns, updatedAt: nowIso() };
+    const ratkoOrder = loaded.ratkoOrder
+      ? reconcileRatkoOrder(loaded.ratkoOrder, columns, tasks)
+      : null;
+    return {
+      version: 1,
+      columns,
+      updatedAt: nowIso(),
+      ...(ratkoOrder ? { ratkoOrder } : {}),
+    };
   }
 
   /**
@@ -133,7 +141,13 @@ export class BoardRepository {
       return { id, title, taskIds: [...winnerTaskIds, ...missing] };
     });
 
-    return { version: 1, columns: mergedColumns, updatedAt: nowIso() };
+    const ratkoOrder = mergeRatkoOrder(winner.ratkoOrder, loser.ratkoOrder);
+    return {
+      version: 1,
+      columns: mergedColumns,
+      updatedAt: nowIso(),
+      ...(ratkoOrder ? { ratkoOrder } : {}),
+    };
   }
 
   // ---------- Write (T-208) ----------
@@ -173,7 +187,13 @@ export class BoardRepository {
    * 한 번도 저장되지 않았다. adapter는 인덱스를 거치지 않고 경로로 직접 쓴다.
    */
   private async persist(board: BoardState): Promise<void> {
-    const json = JSON.stringify(board, null, 2);
+    // Ratko order는 Swift 앱이 소유한다. Obsidian이 오래 들고 있던 BoardState를 쓰기 직전에
+    // 디스크 최신값을 다시 읽어, 실행 중인 Ratko의 드래그 순서를 덮어쓰지 않는다.
+    const onDisk = await this.tryLoad();
+    const value = onDisk?.ratkoOrder
+      ? { ...board, ratkoOrder: onDisk.ratkoOrder }
+      : board;
+    const json = JSON.stringify(value, null, 2);
     await this.app.vault.adapter.write(normalizePath(this.boardPath), json);
   }
 }
@@ -186,6 +206,12 @@ function isBoardState(v: unknown): v is BoardState {
   if (obj["version"] !== 1) return false;
   if (!Array.isArray(obj["columns"])) return false;
   if (typeof obj["updatedAt"] !== "string") return false;
+  const ratkoOrder = obj["ratkoOrder"];
+  if (ratkoOrder !== undefined) {
+    if (!ratkoOrder || typeof ratkoOrder !== "object") return false;
+    const order = ratkoOrder as Record<string, unknown>;
+    if (!isStringArray(order["focusTaskIds"]) || !isStringArray(order["nextTaskIds"])) return false;
+  }
   for (const c of obj["columns"]) {
     if (!c || typeof c !== "object") return false;
     const col = c as Record<string, unknown>;
@@ -194,6 +220,48 @@ function isBoardState(v: unknown): v is BoardState {
     if (!Array.isArray(col["taskIds"])) return false;
   }
   return true;
+}
+
+function reconcileRatkoOrder(
+  loaded: RatkoTaskOrder,
+  columns: BoardColumn[],
+  tasks: Task[],
+): RatkoTaskOrder {
+  const active = tasks.filter((task) => !task.archivedAt && task.status !== "done");
+  const focus = new Set(active.filter((task) => task.status === "doing").map((task) => task.id));
+  const next = new Set(active.filter((task) => task.status !== "doing").map((task) => task.id));
+  const idsFor = (status: ColumnId): TaskId[] => columns.find((column) => column.id === status)?.taskIds ?? [];
+  const fallback = [
+    ...idsFor("doing"),
+    ...idsFor("in-review"),
+    ...idsFor("todo"),
+    ...idsFor("hold"),
+    ...idsFor("backlog"),
+    ...active.map((task) => task.id),
+  ];
+  return {
+    focusTaskIds: uniqueTaskIds([...loaded.focusTaskIds.filter((id) => focus.has(id)), ...fallback.filter((id) => focus.has(id))]),
+    nextTaskIds: uniqueTaskIds([...loaded.nextTaskIds.filter((id) => next.has(id)), ...fallback.filter((id) => next.has(id))]),
+  };
+}
+
+function mergeRatkoOrder(
+  winner: RatkoTaskOrder | undefined,
+  loser: RatkoTaskOrder | undefined,
+): RatkoTaskOrder | null {
+  if (!winner && !loser) return null;
+  return {
+    focusTaskIds: uniqueTaskIds([...(winner?.focusTaskIds ?? []), ...(loser?.focusTaskIds ?? [])]),
+    nextTaskIds: uniqueTaskIds([...(winner?.nextTaskIds ?? []), ...(loser?.nextTaskIds ?? [])]),
+  };
+}
+
+function uniqueTaskIds(ids: TaskId[]): TaskId[] {
+  return [...new Set(ids)];
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
 function emptyTaskGroups(): Record<ColumnId, Task[]> {
