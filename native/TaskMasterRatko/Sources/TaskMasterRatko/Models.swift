@@ -19,6 +19,45 @@ struct RatkoTaskDropLocation: Equatable {
     let beforeTaskId: String?
 }
 
+enum RatkoTaskDropFrameKind: Equatable {
+    case section(RatkoTaskList)
+    case task(RatkoTaskList, id: String)
+}
+
+struct RatkoTaskDropFrame: Equatable {
+    let kind: RatkoTaskDropFrameKind
+    let frame: CGRect
+}
+
+struct RatkoTaskDropLayout: Equatable {
+    let frames: [RatkoTaskDropFrame]
+
+    func location(at point: CGPoint) -> RatkoTaskDropLocation? {
+        let sections = frames.compactMap { measurement -> (RatkoTaskList, CGRect)? in
+            guard case .section(let list) = measurement.kind else { return nil }
+            return (list, measurement.frame)
+        }
+        guard !sections.isEmpty else { return nil }
+
+        guard let targetList = sections.min(by: { left, right in
+            verticalDistance(from: point.y, to: left.1) < verticalDistance(from: point.y, to: right.1)
+        })?.0 else { return nil }
+        let tasks = frames.compactMap { measurement -> (String, CGRect)? in
+            guard case .task(let list, let id) = measurement.kind, list == targetList else { return nil }
+            return (id, measurement.frame)
+        }
+        .sorted { $0.1.minY < $1.1.minY }
+        let beforeTaskId = tasks.first { point.y < $0.1.midY }?.0
+        return RatkoTaskDropLocation(list: targetList, beforeTaskId: beforeTaskId)
+    }
+
+    private func verticalDistance(from y: CGFloat, to frame: CGRect) -> CGFloat {
+        if y < frame.minY { return frame.minY - y }
+        if y > frame.maxY { return y - frame.maxY }
+        return 0
+    }
+}
+
 struct RatkoTaskOrder: Equatable {
     var focusTaskIds: [String]
     var nextTaskIds: [String]

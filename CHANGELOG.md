@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Ratko task dragging now uses one geometry-aware drop surface for both `현재 작업` and `다음 할 일`
+  instead of competing card and section drop handlers. The pointer's position relative to each card midpoint
+  selects exactly one insertion boundary, the dragged card dims, and the purple preview no longer flickers or
+  jumps to a list end before release.
 - Dragging a Ratko task near the top or bottom of the scroll viewport now smoothly auto-scrolls long
   lists. The panel resolves SwiftUI's actual nested `NSScrollView` instead of relying on a missing
   enclosing view, and uses one 60 Hz eased path instead of event-dependent double ticks. A purple

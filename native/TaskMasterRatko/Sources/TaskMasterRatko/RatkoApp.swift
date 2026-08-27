@@ -206,6 +206,30 @@ private struct RatkoScrollViewResolver: NSViewRepresentable {
     }
 }
 
+private struct RatkoTaskDropFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [RatkoTaskDropFrame] = []
+
+    static func reduce(value: inout [RatkoTaskDropFrame], nextValue: () -> [RatkoTaskDropFrame]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+private extension View {
+    func ratkoTaskDropFrame(_ kind: RatkoTaskDropFrameKind) -> some View {
+        background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: RatkoTaskDropFramePreferenceKey.self,
+                    value: [RatkoTaskDropFrame(
+                        kind: kind,
+                        frame: proxy.frame(in: .named("ratko-task-drop-surface"))
+                    )]
+                )
+            }
+        }
+    }
+}
+
 @main
 struct TaskMasterRatkoApp: App {
     @StateObject private var store: RatkoStore
@@ -253,6 +277,7 @@ struct RatkoPanel: View {
     @State private var feedbackExpanded = false
     @State private var draggingTaskId: String?
     @State private var taskDropLocation: RatkoTaskDropLocation?
+    @State private var taskDropFrames: [RatkoTaskDropFrame] = []
     @StateObject private var dragAutoScroller = RatkoDragAutoScroller()
     @StateObject private var dragReleaseMonitor = RatkoDragReleaseMonitor()
     @AppStorage("ratko.panel.height") private var panelHeight = RatkoPanelSizing.defaultHeight
@@ -273,8 +298,7 @@ struct RatkoPanel: View {
                             .background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                     }
                     aiFeedbackSection
-                    focusSection
-                    nextSection
+                    taskSections
                 }
                 .padding(14)
                 .background {
@@ -415,38 +439,17 @@ struct RatkoPanel: View {
             } else {
                 ForEach(store.focusTasks, id: \.0.id) { task, timer in
                     FocusCard(store: store, task: task, timer: timer, draggingTaskId: $draggingTaskId)
+                        .opacity(draggingTaskId == task.id ? 0.45 : 1)
+                        .ratkoTaskDropFrame(.task(.focus, id: task.id))
                         .overlay(alignment: .top) {
                             taskDropIndicator(list: .focus, beforeTaskId: task.id)
                         }
-                        .onDrop(
-                            of: [.plainText],
-                            delegate: TaskDropDelegate(
-                                store: store,
-                                targetList: .focus,
-                                beforeTaskId: task.id,
-                                draggingTaskId: $draggingTaskId,
-                                dropLocation: $taskDropLocation,
-                                autoScroller: dragAutoScroller,
-                                releaseMonitor: dragReleaseMonitor
-                            )
-                        )
                 }
             }
             taskDropIndicator(list: .focus, beforeTaskId: nil)
                 .frame(height: 3)
         }
-        .onDrop(
-            of: [.plainText],
-            delegate: TaskDropDelegate(
-                store: store,
-                targetList: .focus,
-                beforeTaskId: nil,
-                draggingTaskId: $draggingTaskId,
-                dropLocation: $taskDropLocation,
-                autoScroller: dragAutoScroller,
-                releaseMonitor: dragReleaseMonitor
-            )
-        )
+        .ratkoTaskDropFrame(.section(.focus))
     }
 
     private var nextSection: some View {
@@ -454,21 +457,11 @@ struct RatkoPanel: View {
             sectionHeader("다음 할 일", count: store.nextTasks.count)
             ForEach(store.nextTasks) { task in
                 NextTaskRow(store: store, task: task, draggingTaskId: $draggingTaskId)
+                    .opacity(draggingTaskId == task.id ? 0.45 : 1)
+                    .ratkoTaskDropFrame(.task(.next, id: task.id))
                     .overlay(alignment: .top) {
                         taskDropIndicator(list: .next, beforeTaskId: task.id)
                     }
-                    .onDrop(
-                        of: [.plainText],
-                        delegate: TaskDropDelegate(
-                            store: store,
-                            targetList: .next,
-                            beforeTaskId: task.id,
-                            draggingTaskId: $draggingTaskId,
-                            dropLocation: $taskDropLocation,
-                            autoScroller: dragAutoScroller,
-                            releaseMonitor: dragReleaseMonitor
-                        )
-                    )
             }
             taskDropIndicator(list: .next, beforeTaskId: nil)
                 .frame(height: 3)
@@ -481,12 +474,21 @@ struct RatkoPanel: View {
             }
             .padding(.top, 2)
         }
+        .ratkoTaskDropFrame(.section(.next))
+    }
+
+    private var taskSections: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            focusSection
+            nextSection
+        }
+        .coordinateSpace(name: "ratko-task-drop-surface")
+        .onPreferenceChange(RatkoTaskDropFramePreferenceKey.self) { taskDropFrames = $0 }
         .onDrop(
             of: [.plainText],
-            delegate: TaskDropDelegate(
+            delegate: TaskDropSurfaceDelegate(
                 store: store,
-                targetList: .next,
-                beforeTaskId: nil,
+                layout: RatkoTaskDropLayout(frames: taskDropFrames),
                 draggingTaskId: $draggingTaskId,
                 dropLocation: $taskDropLocation,
                 autoScroller: dragAutoScroller,
@@ -559,9 +561,12 @@ struct RatkoPanel: View {
                 Circle().frame(width: 7, height: 7)
                 Capsule().frame(height: 3)
             }
+            .frame(maxWidth: .infinity)
             .foregroundStyle(.purple)
             .padding(.horizontal, 2)
             .offset(y: -5)
+            .allowsHitTesting(false)
+            .zIndex(1)
             .transition(.opacity)
             .accessibilityHidden(true)
         }
@@ -848,55 +853,47 @@ private struct NextTaskRow: View {
     }
 }
 
-private struct TaskDropDelegate: DropDelegate {
+private struct TaskDropSurfaceDelegate: DropDelegate {
     let store: RatkoStore
-    let targetList: RatkoTaskList
-    let beforeTaskId: String?
+    let layout: RatkoTaskDropLayout
     @Binding var draggingTaskId: String?
     @Binding var dropLocation: RatkoTaskDropLocation?
     let autoScroller: RatkoDragAutoScroller
     let releaseMonitor: RatkoDragReleaseMonitor
 
-    private var targetLocation: RatkoTaskDropLocation {
-        RatkoTaskDropLocation(list: targetList, beforeTaskId: beforeTaskId)
-    }
-
     func validateDrop(info: DropInfo) -> Bool {
-        draggingTaskId != nil
+        draggingTaskId != nil && layout.location(at: info.location) != nil
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        dropLocation = targetLocation
+        dropLocation = layout.location(at: info.location)
         watchForRelease()
         autoScroller.updateForPointer()
         return DropProposal(operation: .move)
     }
 
     func dropEntered(info: DropInfo) {
-        dropLocation = targetLocation
+        dropLocation = layout.location(at: info.location)
         watchForRelease()
         autoScroller.updateForPointer()
     }
 
     func dropExited(info: DropInfo) {
         autoScroller.scheduleStop()
-        let location = targetLocation
-        let binding = _dropLocation
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-            if binding.wrappedValue == location { binding.wrappedValue = nil }
-        }
+        dropLocation = nil
     }
 
     func performDrop(info: DropInfo) -> Bool {
         autoScroller.stop()
         releaseMonitor.stop()
+        let targetLocation = dropLocation ?? layout.location(at: info.location)
         dropLocation = nil
-        guard let taskId = draggingTaskId else { return false }
-        if taskId == beforeTaskId {
+        guard let taskId = draggingTaskId, let targetLocation else { return false }
+        if taskId == targetLocation.beforeTaskId {
             draggingTaskId = nil
             return true
         }
-        store.moveTask(taskId, to: targetList, before: beforeTaskId)
+        store.moveTask(taskId, to: targetLocation.list, before: targetLocation.beforeTaskId)
         draggingTaskId = nil
         return true
     }

@@ -113,6 +113,32 @@ final class TaskMarkdownRepositoryTests: XCTestCase {
         )
     }
 
+    func testTaskDropLayoutResolvesOneBoundaryAcrossBothLists() {
+        let layout = RatkoTaskDropLayout(frames: [
+            RatkoTaskDropFrame(kind: .section(.focus), frame: CGRect(x: 0, y: 0, width: 360, height: 300)),
+            RatkoTaskDropFrame(kind: .task(.focus, id: "focus-a"), frame: CGRect(x: 0, y: 30, width: 360, height: 90)),
+            RatkoTaskDropFrame(kind: .task(.focus, id: "focus-b"), frame: CGRect(x: 0, y: 140, width: 360, height: 100)),
+            RatkoTaskDropFrame(kind: .section(.next), frame: CGRect(x: 0, y: 320, width: 360, height: 220)),
+            RatkoTaskDropFrame(kind: .task(.next, id: "next-a"), frame: CGRect(x: 0, y: 350, width: 360, height: 60)),
+        ])
+
+        XCTAssertEqual(layout.location(at: CGPoint(x: 20, y: 40)), RatkoTaskDropLocation(list: .focus, beforeTaskId: "focus-a"))
+        XCTAssertEqual(layout.location(at: CGPoint(x: 20, y: 130)), RatkoTaskDropLocation(list: .focus, beforeTaskId: "focus-b"))
+        XCTAssertEqual(layout.location(at: CGPoint(x: 20, y: 260)), RatkoTaskDropLocation(list: .focus, beforeTaskId: nil))
+        XCTAssertEqual(layout.location(at: CGPoint(x: 20, y: 360)), RatkoTaskDropLocation(list: .next, beforeTaskId: "next-a"))
+        XCTAssertEqual(layout.location(at: CGPoint(x: 20, y: 500)), RatkoTaskDropLocation(list: .next, beforeTaskId: nil))
+    }
+
+    func testTaskDropLayoutSupportsAnEmptyList() {
+        let layout = RatkoTaskDropLayout(frames: [
+            RatkoTaskDropFrame(kind: .section(.focus), frame: CGRect(x: 0, y: 0, width: 360, height: 120)),
+            RatkoTaskDropFrame(kind: .section(.next), frame: CGRect(x: 0, y: 140, width: 360, height: 180)),
+            RatkoTaskDropFrame(kind: .task(.next, id: "next-a"), frame: CGRect(x: 0, y: 180, width: 360, height: 60)),
+        ])
+
+        XCTAssertEqual(layout.location(at: CGPoint(x: 20, y: 70)), RatkoTaskDropLocation(list: .focus, beforeTaskId: nil))
+    }
+
     @MainActor
     func testTaskDragFindsLargestScrollViewContainingPanelContent() {
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 600))
