@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Task-scoped AI buttons in the Swift menu-bar panel now activate and raise the selected task's
+  AI window. `openWindow` had created the window behind the active app because Ratko runs as an
+  `LSUIElement`, making the control look unresponsive. Each AI window is now identified by task id
+  and explicitly made the key front window from focus, upcoming, and floating-card entry points.
 - Ratko task dragging now observes the panel's AppKit mouse stream after a 5-point movement threshold,
   because SwiftUI's item-provider drag callbacks could be skipped entirely inside the menu-bar panel.
   One geometry-aware surface covers both `현재 작업` and `다음 할 일`; the pointer's position relative

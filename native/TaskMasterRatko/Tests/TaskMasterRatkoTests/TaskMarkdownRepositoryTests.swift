@@ -79,6 +79,27 @@ final class TaskMarkdownRepositoryTests: XCTestCase {
         XCTAssertEqual(RatkoPanelSizing.maximumHeight(visibleScreenHeight: 300), 360)
     }
 
+    @MainActor
+    func testTaskAiWindowLookupTargetsTheSelectedTask() {
+        let first = NSWindow()
+        first.identifier = RatkoTaskAiWindowPresentation.identifier(for: "task_first")
+        let second = NSWindow()
+        second.identifier = RatkoTaskAiWindowPresentation.identifier(for: "task_second")
+
+        XCTAssertTrue(
+            RatkoTaskAiWindowPresentation.window(
+                for: "task_second",
+                in: [first, second]
+            ) === second
+        )
+        XCTAssertNil(
+            RatkoTaskAiWindowPresentation.window(
+                for: "task_missing",
+                in: [first, second]
+            )
+        )
+    }
+
     func testTaskDragAutoScrollUsesEdgesAndStopsInCenter() {
         XCTAssertEqual(
             RatkoDragAutoScroll.velocity(pointerY: 300, viewportMinY: 100, viewportMaxY: 500),

@@ -356,6 +356,74 @@ private enum RatkoUiTestWindow {
     }
 }
 
+@MainActor
+enum RatkoTaskAiWindowPresentation {
+    static func identifier(for taskId: String) -> NSUserInterfaceItemIdentifier {
+        NSUserInterfaceItemIdentifier("ratko-task-ai-\(taskId)")
+    }
+
+    static func open(taskId: String, using openWindow: OpenWindowAction) {
+        openWindow(value: taskId)
+        DispatchQueue.main.async {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            window(for: taskId)?.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    static func register(_ window: NSWindow, taskId: String) {
+        window.identifier = identifier(for: taskId)
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    static func window(for taskId: String) -> NSWindow? {
+        window(for: taskId, in: NSApplication.shared.windows)
+    }
+
+    static func window(for taskId: String, in windows: [NSWindow]) -> NSWindow? {
+        windows.first { $0.identifier == identifier(for: taskId) }
+    }
+}
+
+struct RatkoTaskAiWindowResolver: NSViewRepresentable {
+    let taskId: String
+
+    func makeNSView(context: Context) -> ResolverView {
+        ResolverView(taskId: taskId)
+    }
+
+    func updateNSView(_ nsView: ResolverView, context: Context) {
+        guard nsView.taskId != taskId else { return }
+        nsView.taskId = taskId
+        nsView.resolve()
+    }
+
+    final class ResolverView: NSView {
+        var taskId: String
+
+        init(taskId: String) {
+            self.taskId = taskId
+            super.init(frame: .zero)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            resolve()
+        }
+
+        func resolve() {
+            guard let window else { return }
+            DispatchQueue.main.async { [weak window] in
+                guard let window else { return }
+                RatkoTaskAiWindowPresentation.register(window, taskId: self.taskId)
+            }
+        }
+    }
+}
+
 @main
 struct TaskMasterRatkoApp: App {
     @StateObject private var store: RatkoStore
@@ -877,13 +945,13 @@ struct FocusCard: View {
                 HStack {
                     Button {
                         store.requestTaskAiStepFill(task.id)
-                        openWindow(value: task.id)
+                        RatkoTaskAiWindowPresentation.open(taskId: task.id, using: openWindow)
                     } label: {
                         Label("AI 단계 채우기", systemImage: "sparkles")
                     }
                     .buttonStyle(.plain)
                     Spacer()
-                    Button { openWindow(value: task.id) } label: {
+                    Button { RatkoTaskAiWindowPresentation.open(taskId: task.id, using: openWindow) } label: {
                         Label("AI와 대화", systemImage: "bubble.left.and.bubble.right")
                     }
                     .buttonStyle(.plain)
@@ -978,10 +1046,10 @@ private struct NextTaskRow: View {
                 Spacer()
                 Button {
                     store.requestTaskAiStepFill(task.id)
-                    openWindow(value: task.id)
+                    RatkoTaskAiWindowPresentation.open(taskId: task.id, using: openWindow)
                 } label: { Image(systemName: "sparkles") }
                     .buttonStyle(.borderless).help("AI 단계 채우기")
-                Button { openWindow(value: task.id) } label: {
+                Button { RatkoTaskAiWindowPresentation.open(taskId: task.id, using: openWindow) } label: {
                     Image(systemName: "bubble.left.and.bubble.right")
                 }
                 .buttonStyle(.borderless).help("이 태스크로 AI와 대화")
@@ -1016,7 +1084,7 @@ struct FloatingFocusView: View {
                     Button(task.title) { store.openTask(task) }.buttonStyle(.plain).lineLimit(1)
                     Spacer()
                     Text(formattedElapsed(store.elapsed(for: timer))).font(.system(.body, design: .monospaced)).bold()
-                    Button { openWindow(value: task.id) } label: {
+                    Button { RatkoTaskAiWindowPresentation.open(taskId: task.id, using: openWindow) } label: {
                         Image(systemName: "bubble.left.and.bubble.right")
                     }
                     .buttonStyle(.borderless).help("이 태스크로 AI와 대화")

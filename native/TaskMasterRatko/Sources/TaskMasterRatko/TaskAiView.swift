@@ -38,6 +38,7 @@ struct TaskAiView: View {
             }
         }
         .frame(minWidth: 500, minHeight: 540)
+        .background(RatkoTaskAiWindowResolver(taskId: taskId))
         .onAppear { handleFillRequest(store.taskAiStepFillRequests[taskId]) }
         .onChange(of: store.taskAiStepFillRequests[taskId]) { request in
             handleFillRequest(request)
