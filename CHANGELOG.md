@@ -5,6 +5,15 @@ All notable changes to TaskMaster Obsidian plugin will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.3] - 2026-08-27
+
+### Fixed
+
+- On macOS, TaskMaster now restores its preferred status-item position before every Tray creation.
+  It reads the Wi-Fi item's saved position and places the otter next to it (with the previously
+  verified `250` fallback), so an Obsidian/plugin reload no longer returns the icon to Electron's
+  default insertion point.
+
 ## [0.18.2] - 2026-08-27
 
 ### Fixed

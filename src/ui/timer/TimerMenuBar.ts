@@ -29,6 +29,13 @@ import taskmasterMenuBarIcon2x from "../../assets/taskmaster-menubar-32.png";
 
 const GLOBAL_TRAY_KEY = "__taskmasterTimerTray";
 const GLOBAL_TRAY_OWNER_KEY = "__taskmasterTimerTrayOwner";
+const OBSIDIAN_DEFAULTS_DOMAIN = "md.obsidian";
+const WIFI_DEFAULTS_DOMAIN = "com.apple.controlcenter";
+const WIFI_POSITION_KEY = "NSStatusItem Preferred Position WiFi";
+const TASKMASTER_POSITION_KEY = "NSStatusItem Preferred Position Item-0";
+const TASKMASTER_POSITION_FALLBACK = 250;
+/** Wi-Fi(243) 바로 왼쪽에 랏코(250)를 놓은 이 맥의 실측 간격. */
+const TASKMASTER_WIFI_POSITION_OFFSET = 7;
 // 사용자 제공 랏코에서 배경을 제거한 자산의 내장 fallback 표현.
 // 실제 빌드는 src/assets의 투명 1x/2x PNG를 우선하고, 컬러 보존을 위해 자동 반전하지 않는다.
 const TASKMASTER_ICON_1X = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAEKADAAQAAAABAAAAEAAAAAA0VXHyAAAB4ElEQVQoFZVSMU/bQBg9+86AbQkbJ7giiASJkYWh7VB1qUQjFVExMlb9If0NzEwsjCxdOiEhBiQQG0ultqrSVBShmAQTBzv2+a7vYgeBWODJts73vfe++77vCHkmtPt8Xdc17cEOolJKIcQdrQxTSqvVqmmaY4EcMVQUgjiOgyDI8xy/tJD6vu86DjIA8MuyPBcS+RhjlOowopRFUQQywwuSZZlwgmHG+WK99vHDO9Oc3D84Pvv+iwiBEDSFl8qAleO4cOJ53qjXtre+rG+8f/l6ZX31TTJh//jZSuNb0MIwhFLHqoQkaZatrb7tda/Pf/+9uQxM23q1vGS7rhRFSYqojgSo3uCRpDb3YmFmrtsLL8879ao/78+mNyE6Ae+CWQrwg6N6nndxlZDKbEU6VCMpJ3s7u73gijIqOC8Ed0fS0jRtNpufP23ak0KnRipolvP9wyOJvPdQFu26rsFYu91OkqwybVgT0vesk5PTr98ORmQNvS6KVqNBlxqNhmEwnAp5bNuyrSlvxvl3ESTDIaaB+jjPWq0/kKkMKGhKwcQak8LM4mQYdK8RLgYPx0EU9ft9EMpJY/jYpboOMQCPwgjXCDdiMBh0Oh21P+olviWgGd+l8dajy4cJqDKeCo38B7755pjAl1e1AAAAAElFTkSuQmCC";
@@ -240,6 +247,60 @@ interface SharedTrayRegistry {
   [GLOBAL_TRAY_OWNER_KEY]?: string;
 }
 
+type ExecFileSyncLike = (
+  file: string,
+  args: string[],
+  options: Record<string, unknown>,
+) => unknown;
+
+function resolveExecFileSync(): ExecFileSyncLike | null {
+  try {
+    const req = (window as Window & { require?: (id: string) => unknown }).require;
+    if (typeof req !== "function") return null;
+    const childProcess = req("child_process") as { execFileSync?: ExecFileSyncLike } | null;
+    return typeof childProcess?.execFileSync === "function"
+      ? childProcess.execFileSync.bind(childProcess)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Electron Tray에는 macOS 메뉴바 삽입 위치 API가 없다. AppKit이 새 status item을 만들 때
+ * 읽는 defaults 값을 Tray 생성 직전에 보정해, renderer reload 뒤에도 랏코를 Wi-Fi 옆에 둔다.
+ */
+export function ensureTaskMasterNextToWifi(
+  platform: string = globalThis.process?.platform ?? "",
+  execFileSync: ExecFileSyncLike | null = resolveExecFileSync(),
+): number | null {
+  if (platform !== "darwin" || !execFileSync) return null;
+  let preferred = TASKMASTER_POSITION_FALLBACK;
+  try {
+    const raw = execFileSync(
+      "/usr/bin/defaults",
+      ["read", WIFI_DEFAULTS_DOMAIN, WIFI_POSITION_KEY],
+      { encoding: "utf8" },
+    );
+    const wifi = Number.parseFloat(String(raw).trim());
+    if (Number.isFinite(wifi)) preferred = wifi + TASKMASTER_WIFI_POSITION_OFFSET;
+  } catch {
+    // Wi-Fi 위치를 읽지 못해도 이 맥에서 검증한 250으로 복구한다.
+  }
+  try {
+    execFileSync(
+      "/usr/bin/defaults",
+      ["write", OBSIDIAN_DEFAULTS_DOMAIN, TASKMASTER_POSITION_KEY, "-float", String(preferred)],
+      { stdio: "ignore" },
+    );
+    debugLog(`tray preferred position: wifi-adjacent=${preferred}`);
+    return preferred;
+  } catch (err) {
+    debugLog(`tray preferred position write failed: ${String(err)}`);
+    return null;
+  }
+}
+
 function resolveElectronRemote(): ElectronRemoteLike | null {
   const req = (window as Window & { require?: (id: string) => unknown }).require;
   if (typeof req !== "function") return null;
@@ -269,6 +330,9 @@ export function createElectronTrayPort(): TrayPort {
     create(): TrayHandle | null {
       const remote = resolveElectronRemote();
       if (!remote) return null;
+      // unload에서 기존 Tray를 없앤 뒤 새로 만들면 macOS가 기본 삽입 위치로 되돌린다.
+      // 새 status item을 만들기 전에 Wi-Fi 인접 기본값을 매번 복원한다.
+      ensureTaskMasterNextToWifi();
       const globalWindow = window as Window & { [GLOBAL_TRAY_KEY]?: TrayHandle };
       // 같은 renderer의 hot reload뿐 아니라 다른 renderer/창이 만든 Tray도 먼저 제거한다.
       // window 전역만 쓰면 이전 renderer가 남긴 status item을 새 renderer가 볼 수 없어

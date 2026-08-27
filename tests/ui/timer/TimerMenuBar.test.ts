@@ -10,6 +10,7 @@ import {
   TimerMenuBar,
   buildPinItems,
   createElectronTrayPort,
+  ensureTaskMasterNextToWifi,
   menuBarTitle,
   mountTimerMenuBar,
   type TrayHandle,
@@ -161,6 +162,37 @@ describe("menuBarTitle — 메뉴바는 랏코 아이콘만 표시", () => {
     expect(menuBarTitle([snap({ phase: "running", elapsedMs: 153_000 })])).toBe("");
     expect(menuBarTitle([snap({ phase: "paused", elapsedMs: 250_000 })])).toBe("");
     expect(menuBarTitle([snap({}), snap({}), snap({})])).toBe("");
+  });
+});
+
+describe("macOS 메뉴바 기본 삽입 위치", () => {
+  it("Wi-Fi의 저장 위치 바로 옆을 TaskMaster Item-0 기본값으로 쓴다", () => {
+    const calls: Array<{ file: string; args: string[]; options: Record<string, unknown> }> = [];
+    const execFileSync = vi.fn((file: string, args: string[], options: Record<string, unknown>) => {
+      calls.push({ file, args, options });
+      return args[0] === "read" ? "243\n" : "";
+    });
+
+    expect(ensureTaskMasterNextToWifi("darwin", execFileSync)).toBe(250);
+    expect(calls).toEqual([
+      {
+        file: "/usr/bin/defaults",
+        args: ["read", "com.apple.controlcenter", "NSStatusItem Preferred Position WiFi"],
+        options: { encoding: "utf8" },
+      },
+      {
+        file: "/usr/bin/defaults",
+        args: ["write", "md.obsidian", "NSStatusItem Preferred Position Item-0", "-float", "250"],
+        options: { stdio: "ignore" },
+      },
+    ]);
+  });
+
+  it("macOS가 아니거나 defaults를 실행할 수 없으면 건드리지 않는다", () => {
+    const execFileSync = vi.fn();
+    expect(ensureTaskMasterNextToWifi("linux", execFileSync)).toBeNull();
+    expect(ensureTaskMasterNextToWifi("darwin", null)).toBeNull();
+    expect(execFileSync).not.toHaveBeenCalled();
   });
 });
 
