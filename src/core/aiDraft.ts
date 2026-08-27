@@ -1,5 +1,5 @@
 // AI 초안: `claude -p --output-format json` 의 stdout에서 카드 필드 제안을 뽑고,
-// 작업 단계의 종류 접두어를 읽고 쓴다. 프로세스·UI를 모르는 순수 함수만 둔다.
+// 작업 단계의 실행 주체 접두어를 읽고 쓴다. 프로세스·UI를 모르는 순수 함수만 둔다.
 //
 // 왜 JSON만 받고 파일은 안 건드리게 하는가: 카드 .md 를 AI가 직접 쓰면
 // Task.knownMtime conflict detection 과 부딪히고 passthrough/fieldOrder 보존이 깨진다.
@@ -7,17 +7,16 @@
 
 import type { Priority } from "./types";
 
-/** 단계의 종류. 곧 "누가 하는가"의 위임 라우팅 키다 (ADR-0012 §4). */
-export const STEP_KINDS = ["결정", "조사", "실작업", "검증", "대기"] as const;
-export type StepKind = (typeof STEP_KINDS)[number];
+/** 단계 타이머가 측정하는 실행 주체. */
+export const STEP_OWNERS = ["인간", "AI"] as const;
+export type StepOwner = (typeof STEP_OWNERS)[number];
 
-/** 규칙: 3~7개. 2개면 안 쪼갠 것, 8개 넘으면 카드가 두 장이어야 한다. */
-export const MIN_STEPS = 3;
+/** AI 응답이 비정상적으로 커져 UI를 밀어내지 않게 하는 저장 안전 상한이다. 계획 규칙은 아니다. */
 export const MAX_STEPS = 7;
 
 export interface PlanStep {
   /** 접두어를 못 읽었으면 null — 조용히 고치지 않고 UI에서 회색으로 보여준다. */
-  kind: StepKind | null;
+  owner: StepOwner | null;
   /** 접두어를 뗀 본문. */
   text: string;
   /** 저장된 원문 그대로. */
@@ -59,51 +58,40 @@ export const EMPTY_SUGGESTION: AiDraftSuggestion = {
   rationale: null,
 };
 
-/** 저장된 단계 문자열에서 종류 접두어를 읽는다. 모르는 접두어는 kind=null. */
+/** 저장된 단계 문자열에서 실행 주체 접두어를 읽는다. 모르는 접두어는 owner=null. */
 export function parsePlanStep(raw: string): PlanStep {
   const trimmed = raw.trim();
   const match = STEP_PREFIX.exec(trimmed);
-  if (!match) return { kind: null, text: trimmed, raw: trimmed };
+  if (!match) return { owner: null, text: trimmed, raw: trimmed };
   const label = (match[1] ?? "").trim();
-  const kind = STEP_KINDS.find((candidate) => candidate === label) ?? null;
-  if (!kind) return { kind: null, text: trimmed, raw: trimmed };
-  return { kind, text: (match[2] ?? "").trim(), raw: trimmed };
+  const owner = STEP_OWNERS.find((candidate) => candidate === label) ?? null;
+  if (!owner) return { owner: null, text: trimmed, raw: trimmed };
+  return { owner, text: (match[2] ?? "").trim(), raw: trimmed };
 }
 
-export function formatPlanStep(kind: StepKind, text: string): string {
-  return `[${kind}] ${text.trim()}`;
+export function formatPlanStep(owner: StepOwner, text: string): string {
+  return `[${owner}] ${text.trim()}`;
 }
 
 export interface PlanWarning {
-  code: "too-few" | "too-many" | "no-decision" | "bad-first" | "unlabeled";
+  code: "too-many" | "unlabeled";
   message: string;
 }
 
 /**
- * 단계 목록이 규칙을 어겼는지 본다. **고치지 않고 알리기만 한다** — 구조는 기계가
- * 보되 의미는 사람이 판정해야 하고, 여기서 조용히 바로잡으면 AI가 결정 단계를
- * 빠뜨린 사실 자체가 숨는다.
+ * 측정에 필요한 실행 주체가 보이는지 본다. **고치지 않고 알리기만 한다** — 기존
+ * 단계나 과거 접두어를 임의로 바꾸면 이미 쌓인 단계별 시간의 의미가 달라진다.
  */
 export function inspectPlan(steps: readonly string[]): PlanWarning[] {
   const parsed = steps.map(parsePlanStep).filter((step) => step.text.length > 0);
   if (parsed.length === 0) return [];
   const warnings: PlanWarning[] = [];
-  if (parsed.length < MIN_STEPS) {
-    warnings.push({ code: "too-few", message: `단계가 ${parsed.length}개다 — ${MIN_STEPS}개 미만이면 아직 안 쪼갠 것이다.` });
-  }
   if (parsed.length > MAX_STEPS) {
-    warnings.push({ code: "too-many", message: `단계가 ${parsed.length}개다 — ${MAX_STEPS}개를 넘으면 카드가 두 장이어야 한다.` });
+    warnings.push({ code: "too-many", message: `단계가 ${parsed.length}개다 — 현재 국면을 알아차리는 용도보다 잘게 나뉘었다. 같은 주체의 연속 단계를 합칠 수 있는지 본다.` });
   }
-  if (!parsed.some((step) => step.kind === "결정")) {
-    warnings.push({ code: "no-decision", message: "[결정] 단계가 없다 — 닫아야 할 선택지가 정말 없는지 본다." });
-  }
-  const first = parsed[0];
-  if (first && first.kind !== "결정" && first.kind !== "조사") {
-    warnings.push({ code: "bad-first", message: "첫 단계가 [결정]도 [조사]도 아니다 — 루틴 카드가 아니면 모르는 채로 출발하는 것이다." });
-  }
-  const unlabeled = parsed.filter((step) => step.kind == null).length;
+  const unlabeled = parsed.filter((step) => step.owner == null).length;
   if (unlabeled > 0) {
-    warnings.push({ code: "unlabeled", message: `종류를 못 읽은 단계 ${unlabeled}개 — 접두어를 ${STEP_KINDS.map((k) => `[${k}]`).join(" ")} 중 하나로 맞춘다.` });
+    warnings.push({ code: "unlabeled", message: `실행 주체를 못 읽은 단계 ${unlabeled}개 — 접두어를 ${STEP_OWNERS.map((owner) => `[${owner}]`).join(" ")} 중 하나로 맞춘다.` });
   }
   return warnings;
 }
@@ -201,7 +189,7 @@ export function draftMode(existingSteps: readonly string[]): "generate" | "criti
 
 export function buildDraftPrompt(input: DraftPromptInput): string {
   const mode = draftMode(input.existingSteps);
-  const kinds = STEP_KINDS.map((kind) => `[${kind}]`).join(" · ");
+  const owners = STEP_OWNERS.map((owner) => `[${owner}]`).join(" · ");
   const lines: string[] = [
     "너는 내 개인 태스크 보드(TaskMaster)의 카드 하나를 채우는 보조자다.",
     "아래 카드를 읽고 **JSON 객체 하나만** 출력한다. 설명 문장을 앞뒤에 붙이지 않는다.",
@@ -222,28 +210,29 @@ export function buildDraftPrompt(input: DraftPromptInput): string {
     "",
     "## 먼저 할 일",
     input.deep
-      ? "이 vault에서 **비슷한 과거 카드**(TaskMaster/Tasks, TaskMaster/Archive)와 관련 노트를 먼저 찾아, 그때 쓴 단계와 실제 걸린 시간을 재사용한다. Jira 키가 있으면 티켓 본문의 인수조건과 미확정 항목을 읽는다."
+      ? "이 vault에서 **비슷한 과거 카드**(TaskMaster/Tasks, TaskMaster/Archive)와 관련 노트를 먼저 찾아, 인간과 AI가 맡았던 큰 국면과 실제 걸린 시간만 참고한다. 과거의 상세 단계명은 복사하지 않는다. Jira 키가 있으면 티켓 본문의 인수조건과 미확정 항목을 읽는다."
       : "이 카드에 적힌 내용만 보고 판단한다. 파일을 뒤지지 않는다.",
     "",
-    "## 작업 단계 규칙",
-    `- 단계마다 종류 접두어를 붙인다: ${kinds}`,
-    "- `결정`=선택지를 닫는 일(사람만 할 수 있다) · `조사`=모르는 걸 아는 상태로 · `실작업`=코드·문서 변경 · `검증`=됐는지 확인 · `대기`=남이 해줘야 움직이는 일",
-    "- 이름은 **동사 + 산출물**로 쓴다. \"설계\"가 아니라 \"A와 B 중 하나 골라 티켓에 근거 2줄\".",
-    `- ${MIN_STEPS}~${MAX_STEPS}개. 첫 단계는 [결정] 또는 [조사]다.`,
-    "- **30분 안에 끝나는 카드는 단계를 만들지 않는다** — 빈 배열로 둔다. 잡무·루틴에 단계를 붙이는 건 순손실이다.",
-    "- `대기` 단계에는 기한과 \"안 오면 어떻게 한다\"를 함께 적는다.",
+    "## 작업 단계의 목적",
+    "- 단계는 체크리스트나 AI 작업 지시서가 아니다. **인간이 생각·판단한 시간과 AI가 실행된 시간을 분리해 측정하고, 지금 어느 국면인지 알아차리는 표지**다.",
+    `- 단계마다 실행 주체 접두어를 붙인다: ${owners}`,
+    "- `[인간]`은 생각·설계·결정·판정, `[AI]`는 에이전트 실행·조사·구현·테스트 실행이다.",
+    "- 이름은 짧은 국면명으로 쓴다. `[인간] 설계`, `[AI] 구현`, `[인간] 검증`이면 충분하다.",
+    "- `설계를 어떻게 할지 정리`처럼 방법·산출물·세부 체크리스트를 단계명에 쓰지 않는다. 그런 내용은 카드 본문이나 설계 문서가 맡는다.",
+    "- 실행 주체가 바뀌거나 시간을 따로 보고 싶은 큰 국면이 바뀔 때만 나눈다. 고정 개수나 첫 단계 규칙은 없다.",
+    "- 기다리는 시간은 인간·AI 생산성 시간이 아니므로 단계로 만들지 말고 상태나 비고에 둔다.",
     "",
   );
 
   if (mode === "generate") {
     lines.push(
       "## 이번 모드: 생성",
-      "`steps`를 채운다. **닫아야 할 선택지가 있으면 반드시 [결정] 단계를 하나 이상 세운다** — 실작업만 나열하면 카드가 다시 멈춘다. `critique`는 빈 배열로 둔다.",
+      "`steps`를 채운다. 필요한 측정 국면만 짧게 만들고, 단계 전환을 측정할 필요가 없는 한 덩어리 작업이면 빈 배열로 둔다. `critique`는 빈 배열로 둔다.",
     );
   } else {
     lines.push(
       "## 이번 모드: 비평",
-      "이미 단계가 적혀 있으므로 **덮어쓰지 않는다.** `steps`는 빈 배열로 두고, `critique`에 지적만 한 줄씩 담는다 — 빠진 단계, 아직 안 닫힌 결정, 순서가 성립하지 않는 곳, 실작업으로 위장한 결정. 트집을 위한 트집은 쓰지 않는다.",
+      "이미 단계가 적혀 있으므로 **덮어쓰지 않는다.** `steps`는 빈 배열로 두고, `critique`에는 실행 주체가 빠졌거나 단계명이 세부 지시서처럼 길거나 측정할 국면 전환이 빠진 경우만 한 줄씩 지적한다. 트집을 위한 트집은 쓰지 않는다.",
     );
   }
 
@@ -260,7 +249,7 @@ export function buildDraftPrompt(input: DraftPromptInput): string {
     `  "projectTitle": null 또는 다음 중 하나 — ${projects},`,
     '  "tags": ["짧은 분류 태그", "..."],',
     '  "remarks": "카드에 띄울 한 줄 비고 또는 null",',
-    '  "steps": ["[결정] ...", "[실작업] ..."],',
+    '  "steps": ["[인간] 설계", "[AI] 구현", "[인간] 검증"],',
     '  "critique": ["지적 한 줄", "..."],',
     '  "rationale": "무엇을 근거로 뽑았는지 한 줄"',
     "}",

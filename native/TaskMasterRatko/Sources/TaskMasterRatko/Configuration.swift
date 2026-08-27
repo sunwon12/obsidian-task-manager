@@ -7,6 +7,7 @@ struct RatkoConfiguration: Codable {
     var aiFeedbackBinary: String?
     var aiFeedbackPrompt: String?
     var aiFeedbackTimeoutMinutes: Int?
+    var taskAiTimeoutMinutes: Int?
 
     var vaultURL: URL {
         URL(fileURLWithPath: (vaultPath as NSString).expandingTildeInPath, isDirectory: true)
@@ -34,6 +35,10 @@ struct RatkoConfiguration: Codable {
 
     var aiFeedbackTimeoutMinutesResolved: Int {
         min(60, max(1, aiFeedbackTimeoutMinutes ?? 10))
+    }
+
+    var taskAiTimeoutMinutesResolved: Int {
+        min(30, max(1, taskAiTimeoutMinutes ?? 5))
     }
 
     static func load(

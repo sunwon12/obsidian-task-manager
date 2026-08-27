@@ -103,7 +103,7 @@ const ko = {
   "modal.task.steps": "작업 계획",
   "modal.task.stepsPlaceholder": "한 줄에 한 단계씩 입력 (1. 번호를 붙여도 됩니다)",
   "modal.task.stepNumber": "{number}단계",
-  "modal.task.stepPlaceholder": "할 일을 입력하세요",
+  "modal.task.stepPlaceholder": "[인간] 설계 / [AI] 구현",
   "modal.task.addStep": "+ 단계 추가",
   "modal.task.removeStep": "{number}단계 삭제",
   "aiDraft.title": "AI 초안",

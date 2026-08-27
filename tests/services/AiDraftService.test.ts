@@ -142,7 +142,7 @@ describe("AiDraftService", () => {
       critique: ["1번이 닫히기 전엔 3번이 불가능하다"],
     }));
 
-    await service.suggest({ ...INPUT, existingSteps: ["[실작업] 구현"] });
+    await service.suggest({ ...INPUT, existingSteps: ["[AI] 구현"] });
 
     expect(service.getState().mode).toBe("critique");
     expect(service.getState().suggestion?.steps).toEqual([]);

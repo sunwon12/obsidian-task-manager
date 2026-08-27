@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Every Swift Ratko task card now opens a task-scoped AI window. It starts with that task's title,
+  body, steps, current phase, and conversation as context, and can answer questions or propose
+  coarse `[인간]`/`[AI]` steps, a memo append, or a body edit.
+- Focus cards expose a visible `AI 단계 채우기` action; upcoming and floating cards expose the
+  same task AI entry points. The model has read-only vault tools and returns JSON proposals only.
+  Ratko shows the proposed changes for apply/discard, rejects stale proposals, and preserves the
+  active step and measured seconds when accepted steps are renamed or reordered.
+
+### Changed
+
+- Work-plan steps now represent coarse measurement phases with `[인간]` and `[AI]` owner prefixes,
+  so human thinking time and AI runtime can be compared. AI drafts no longer force five work kinds,
+  a 3-7 step count, a decision-first order, or detailed execution instructions.
+
 ### Fixed
 
 - Swift Ratko now restores its status-item preference immediately to the left of macOS Wi-Fi on

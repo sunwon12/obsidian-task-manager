@@ -31,6 +31,13 @@ struct TaskMasterRatkoApp: App {
         }
         .defaultSize(width: 420, height: 260)
         .windowStyle(.hiddenTitleBar)
+
+        WindowGroup("태스크 AI", for: String.self) { $taskId in
+            if let taskId {
+                TaskAiView(store: store, taskId: taskId)
+            }
+        }
+        .defaultSize(width: 560, height: 680)
     }
 }
 
@@ -196,6 +203,15 @@ struct RatkoPanel: View {
                         .buttonStyle(.plain)
                         .lineLimit(1)
                     Spacer()
+                    Button {
+                        store.requestTaskAiStepFill(task.id)
+                        openWindow(value: task.id)
+                    } label: { Image(systemName: "sparkles") }
+                        .buttonStyle(.borderless).help("AI 단계 채우기")
+                    Button { openWindow(value: task.id) } label: {
+                        Image(systemName: "bubble.left.and.bubble.right")
+                    }
+                    .buttonStyle(.borderless).help("이 태스크로 AI와 대화")
                     Button { store.focus(task.id) } label: { Image(systemName: "play.fill") }
                         .buttonStyle(.borderless).help("집중 시작")
                 }
@@ -287,6 +303,7 @@ struct FocusCard: View {
     @ObservedObject var store: RatkoStore
     let task: TaskCard
     let timer: TimerRecord
+    @Environment(\.openWindow) private var openWindow
     @State private var newStep = ""
     @State private var memo = ""
     @State private var showingMemo = false
@@ -325,7 +342,7 @@ struct FocusCard: View {
                             .foregroundStyle(task.currentStep == index + 1 ? Color.accentColor : Color.secondary)
                     }.buttonStyle(.plain)
                     if editingStepIndex == index {
-                        TextField("단계 내용", text: $editingStepText)
+                        TextField("[인간] 설계 / [AI] 구현", text: $editingStepText)
                             .textFieldStyle(.roundedBorder)
                             .font(.caption)
                             .focused($stepEditorFocused)
@@ -363,10 +380,26 @@ struct FocusCard: View {
                 }
             }
             HStack {
-                TextField(task.steps.isEmpty ? "첫 단계 추가" : "단계 추가", text: $newStep)
+                TextField("[인간] 설계 / [AI] 구현", text: $newStep)
                     .textFieldStyle(.roundedBorder).font(.caption).onSubmit(addStep)
                 Button(action: addStep) { Image(systemName: "plus") }.buttonStyle(.borderless)
             }
+            HStack {
+                Button {
+                    store.requestTaskAiStepFill(task.id)
+                    openWindow(value: task.id)
+                } label: {
+                    Label("AI 단계 채우기", systemImage: "sparkles")
+                }
+                .buttonStyle(.plain)
+                Spacer()
+                Button { openWindow(value: task.id) } label: {
+                    Label("AI와 대화", systemImage: "bubble.left.and.bubble.right")
+                }
+                .buttonStyle(.plain)
+            }
+            .font(.caption)
+            .foregroundStyle(.purple)
             HStack {
                 Button("잠시 내려놓기") { store.park(task.id) }.buttonStyle(.plain)
                 Spacer()
@@ -432,6 +465,7 @@ struct FocusCard: View {
 
 struct FloatingFocusView: View {
     @ObservedObject var store: RatkoStore
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -449,6 +483,10 @@ struct FloatingFocusView: View {
                     Button(task.title) { store.openTask(task) }.buttonStyle(.plain).lineLimit(1)
                     Spacer()
                     Text(formattedElapsed(store.elapsed(for: timer))).font(.system(.body, design: .monospaced)).bold()
+                    Button { openWindow(value: task.id) } label: {
+                        Image(systemName: "bubble.left.and.bubble.right")
+                    }
+                    .buttonStyle(.borderless).help("이 태스크로 AI와 대화")
                     Button { timer.phase == .running ? store.pause(task.id) : store.start(task.id) } label: {
                         Image(systemName: timer.phase == .running ? "pause.fill" : "play.fill")
                     }

@@ -105,7 +105,7 @@ const en: Record<keyof typeof ko, string> = {
   "modal.task.steps": "Work plan",
   "modal.task.stepsPlaceholder": "One step per line (numbered lines are also accepted)",
   "modal.task.stepNumber": "Step {number}",
-  "modal.task.stepPlaceholder": "What needs to be done?",
+  "modal.task.stepPlaceholder": "[인간] Design / [AI] Build",
   "modal.task.addStep": "+ Add step",
   "modal.task.removeStep": "Remove step {number}",
   "aiDraft.title": "AI draft",

@@ -95,7 +95,7 @@ describe("AiDraftPanel", () => {
       priority: "high",
       tags: ["업무"],
       remarks: "새 비고",
-      steps: ["[결정] 스키마 확정", "[실작업] 구현", "[검증] QA"],
+      steps: ["[인간] 설계", "[AI] 구현", "[인간] 검증"],
     }));
     const applied: DraftPatch[] = [];
     const values: DraftFormValues = { ...EMPTY_VALUES, remarks: "이미 적어 둔 비고" };
@@ -120,7 +120,7 @@ describe("AiDraftPanel", () => {
       steps: [],
       critique: ["1번이 닫히기 전엔 3번이 불가능하다"],
     }));
-    const values: DraftFormValues = { ...EMPTY_VALUES, steps: ["[실작업] 구현"] };
+    const values: DraftFormValues = { ...EMPTY_VALUES, steps: ["[AI] 구현"] };
     const { getByText, queryByLabelText } = renderPanel(container, app, values, () => {});
 
     await act(async () => { fireEvent.click(getByText(/빠르게 채우기|Fill quickly/)); });
@@ -129,18 +129,18 @@ describe("AiDraftPanel", () => {
     expect(queryByLabelText(/작업 계획|Work plan/)).toBeNull();
   });
 
-  it("규칙을 어긴 계획은 경고로 알리되 조용히 고치지 않는다", async () => {
+  it("실행 주체가 없는 계획은 경고로 알리되 조용히 고치지 않는다", async () => {
     const { app, container } = build(async () => stdout({
-      steps: ["[실작업] 구현", "[실작업] 리팩터링", "[검증] 테스트"],
+      steps: ["설계", "[AI] 구현", "[인간] 검증"],
     }));
     const applied: DraftPatch[] = [];
     const { getByText, getByLabelText } = renderPanel(container, app, EMPTY_VALUES, (p) => applied.push(p));
 
     await act(async () => { fireEvent.click(getByText(/빠르게 채우기|Fill quickly/)); });
-    expect(getByText(/\[결정\] 단계가 없다/)).toBeTruthy();
+    expect(getByText(/실행 주체를 못 읽은 단계 1개/)).toBeTruthy();
 
     await act(async () => { fireEvent.click(getByText(/선택 항목 적용|Apply selected/)); });
-    expect(applied[0]?.steps).toEqual(["[실작업] 구현", "[실작업] 리팩터링", "[검증] 테스트"]);
+    expect(applied[0]?.steps).toEqual(["설계", "[AI] 구현", "[인간] 검증"]);
     expect((getByLabelText(/작업 계획|Work plan/) as HTMLInputElement).checked).toBe(true);
   });
 

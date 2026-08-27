@@ -32,37 +32,37 @@ const BASE_INPUT: DraftPromptInput = {
 };
 
 describe("parsePlanStep", () => {
-  it("아는 접두어는 종류로 읽고 본문만 남긴다", () => {
-    expect(parsePlanStep("[결정] A와 B 중 고르기")).toEqual({
-      kind: "결정",
-      text: "A와 B 중 고르기",
-      raw: "[결정] A와 B 중 고르기",
+  it("아는 접두어는 실행 주체로 읽고 본문만 남긴다", () => {
+    expect(parsePlanStep("[인간] 설계")).toEqual({
+      owner: "인간",
+      text: "설계",
+      raw: "[인간] 설계",
     });
   });
 
-  it("모르는 접두어는 조용히 고치지 않고 종류 없음으로 둔다", () => {
-    const parsed = parsePlanStep("[대기중] 답변 기다리기");
-    expect(parsed.kind).toBeNull();
-    expect(parsed.text).toBe("[대기중] 답변 기다리기");
+  it("이전 분류 접두어는 조용히 바꾸지 않고 실행 주체 없음으로 둔다", () => {
+    const parsed = parsePlanStep("[실작업] 구현");
+    expect(parsed.owner).toBeNull();
+    expect(parsed.text).toBe("[실작업] 구현");
   });
 
-  it("접두어가 없으면 종류 없음이다", () => {
-    expect(parsePlanStep("그냥 단계").kind).toBeNull();
+  it("접두어가 없으면 실행 주체 없음이다", () => {
+    expect(parsePlanStep("그냥 단계").owner).toBeNull();
   });
 
   it("formatPlanStep은 다시 읽을 수 있는 형태로 쓴다", () => {
-    const formatted = formatPlanStep("조사", "  근거 위치 찾기  ");
-    expect(formatted).toBe("[조사] 근거 위치 찾기");
-    expect(parsePlanStep(formatted).kind).toBe("조사");
+    const formatted = formatPlanStep("AI", "  구현  ");
+    expect(formatted).toBe("[AI] 구현");
+    expect(parsePlanStep(formatted).owner).toBe("AI");
   });
 });
 
 describe("inspectPlan", () => {
   it("규칙을 다 지킨 계획은 경고가 없다", () => {
     expect(inspectPlan([
-      "[결정] 스키마 확정",
-      "[실작업] 서버 구현",
-      "[검증] QA 확인",
+      "[인간] 설계",
+      "[AI] 구현",
+      "[인간] 검증",
     ])).toEqual([]);
   });
 
@@ -70,26 +70,21 @@ describe("inspectPlan", () => {
     expect(inspectPlan([])).toEqual([]);
   });
 
-  it("결정 단계가 없으면 알린다", () => {
-    const codes = inspectPlan([
-      "[실작업] 구현",
-      "[실작업] 리팩터링",
-      "[검증] 테스트",
-    ]).map((warning) => warning.code);
-    expect(codes).toContain("no-decision");
-    expect(codes).toContain("bad-first");
+  it("단계가 적다고 최소 개수나 첫 단계 종류를 강제하지 않는다", () => {
+    expect(inspectPlan(["[AI] 구현"])).toEqual([]);
   });
 
-  it("개수 상·하한을 본다", () => {
-    expect(inspectPlan(["[결정] 하나", "[실작업] 둘"]).map((w) => w.code)).toContain("too-few");
-    const many = Array.from({ length: 9 }, (_, i) => `[실작업] ${i}`);
-    expect(inspectPlan(["[결정] 첫 단계", ...many]).map((w) => w.code)).toContain("too-many");
-  });
-
-  it("종류를 못 읽은 단계를 센다", () => {
-    const warning = inspectPlan(["[결정] 하나", "라벨 없음", "[검증] 셋"])
+  it("실행 주체를 못 읽은 단계를 센다", () => {
+    const warning = inspectPlan(["[인간] 설계", "라벨 없음", "[AI] 구현"])
       .find((w) => w.code === "unlabeled");
     expect(warning?.message).toContain("1개");
+    expect(warning?.message).toContain("[인간] [AI]");
+  });
+
+  it("안전 상한을 넘길 만큼 잘게 나뉜 계획은 합치기를 제안한다", () => {
+    const many = Array.from({ length: MAX_STEPS + 1 }, (_, i) => `[AI] 국면 ${i}`);
+    const warning = inspectPlan(many).find((w) => w.code === "too-many");
+    expect(warning?.message).toContain("같은 주체의 연속 단계");
   });
 });
 
@@ -100,7 +95,7 @@ describe("parseAiDraftResponse", () => {
       projectTitle: "홈 커뮤니티",
       tags: ["#업무", " 백엔드 "],
       remarks: "기획 확정 대기",
-      steps: ["[결정] 스키마 확정", "[실작업] 구현"],
+      steps: ["[인간] 설계", "[AI] 구현"],
       critique: [],
       rationale: "BDCC-1132 본문",
     }));
@@ -148,7 +143,7 @@ describe("parseAiDraftResponse", () => {
     const result = parseAiDraftResponse(envelope({
       priority: "urgent",
       tags: "문자열이면 무시",
-      steps: Array.from({ length: 12 }, (_, i) => `[실작업] ${i}`),
+      steps: Array.from({ length: 12 }, (_, i) => `[AI] ${i}`),
       unknownField: 1,
     }));
     expect(result.suggestion?.priority).toBeNull();
@@ -163,20 +158,27 @@ describe("buildDraftPrompt", () => {
     expect(draftMode(["   "])).toBe("generate");
     const prompt = buildDraftPrompt(BASE_INPUT);
     expect(prompt).toContain("이번 모드: 생성");
-    expect(prompt).toContain("[결정]");
-    expect(prompt).toContain("30분");
+    expect(prompt).toContain("[인간] 설계");
+    expect(prompt).toContain("[AI] 구현");
+    expect(prompt).toContain("인간이 생각·판단한 시간과 AI가 실행된 시간");
+    expect(prompt).toContain("고정 개수나 첫 단계 규칙은 없다");
+    expect(prompt).not.toContain("3~7개");
+    expect(prompt).not.toContain("[결정]");
   });
 
   it("단계가 있으면 비평 모드고 덮어쓰지 말라고 못 박는다", () => {
-    const prompt = buildDraftPrompt({ ...BASE_INPUT, existingSteps: ["[실작업] 구현"] });
-    expect(draftMode(["[실작업] 구현"])).toBe("critique");
+    const prompt = buildDraftPrompt({ ...BASE_INPUT, existingSteps: ["[AI] 구현"] });
+    expect(draftMode(["[AI] 구현"])).toBe("critique");
     expect(prompt).toContain("이번 모드: 비평");
     expect(prompt).toContain("덮어쓰지 않는다");
-    expect(prompt).toContain("1. [실작업] 구현");
+    expect(prompt).toContain("1. [AI] 구현");
+    expect(prompt).toContain("세부 지시서처럼 길거나");
   });
 
   it("깊은 경로에서만 과거 카드를 뒤지라고 지시한다", () => {
-    expect(buildDraftPrompt({ ...BASE_INPUT, deep: true })).toContain("비슷한 과거 카드");
+    const prompt = buildDraftPrompt({ ...BASE_INPUT, deep: true });
+    expect(prompt).toContain("비슷한 과거 카드");
+    expect(prompt).toContain("과거의 상세 단계명은 복사하지 않는다");
     expect(buildDraftPrompt(BASE_INPUT)).toContain("파일을 뒤지지 않는다");
   });
 

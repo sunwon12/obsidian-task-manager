@@ -61,6 +61,8 @@ v0.10.0에서 `claude -p`를 헤드리스로 돌리는 경로(`AiReportService` 
 
 ## References
 
+- **단계 분류 결정은 [ADR-0013](./0013-human-ai-measurement-steps.md)이 supersede한다.** JSON 반환,
+  필드별 적용, 기존 단계 비평 전용 결정은 이 ADR대로 유지한다.
 - 관련 ADR: [ADR-0001](./0001-hybrid-storage.md), [ADR-0005](./0005-metadata-cache-first.md), [ADR-0008](./0008-frontmatter-passthrough.md)
 - 상위 지식베이스 ADR: `docs/adr/adr-002-TaskMaster-카드-단계에-종류-접두어를-쓴다.md` (카드 데이터 형식 결정)
 - 정의 본문: 지식베이스 `01_개발/09_옵시디언/TaskMaster-작업-step-쪼개기와-AI-위임-경계.md`

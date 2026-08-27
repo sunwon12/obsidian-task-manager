@@ -37,3 +37,5 @@ ADR은 미래의 코드 리뷰어와 신규 합류자가 "왜 이렇게 만들�
 | [0010](0010-detail-ux-open-note-only.md) | Phase 1 카드 상세는 Obsidian note 열기만 |
 | [0011](0011-project-quick-memo-storage.md) | Project quick memo는 project note append를 기본으로 한다 |
 | [0012](0012-ai-draft-suggestions.md) | AI 초안은 JSON만 반환하고 적용은 TaskService를 탄다 |
+| [0013](0013-human-ai-measurement-steps.md) | 단계는 인간·AI 시간을 구분하는 측정 국면으로 둔다 |
+| [0014](0014-task-scoped-ai-proposals.md) | 태스크 AI는 읽기 전용 문맥과 확인형 변경안을 쓴다 |

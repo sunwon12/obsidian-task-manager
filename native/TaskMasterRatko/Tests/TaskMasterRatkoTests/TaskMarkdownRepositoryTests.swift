@@ -133,6 +133,85 @@ final class TaskMarkdownRepositoryTests: XCTestCase {
         XCTAssertEqual(configuration.aiFeedbackPathResolved, "02_일상/03_성찰/일일-일정-피드백.md")
         XCTAssertEqual(configuration.aiFeedbackPromptResolved, "/daily-schedule-feedback")
         XCTAssertEqual(configuration.aiFeedbackTimeoutMinutesResolved, 10)
+        XCTAssertEqual(configuration.taskAiTimeoutMinutesResolved, 5)
+    }
+
+    func testTaskAiParsesClaudeEnvelopeAndProposedChanges() throws {
+        let inner = #"{"reply":"짧은 국면으로 바꿨어요.","steps":["[인간] 설계","[AI] 구현","[인간] 검증"],"memo":"검증 기준 확인","body":null}"#
+        let outer: [String: Any] = [
+            "type": "result",
+            "is_error": false,
+            "result": inner,
+        ]
+        let data = try JSONSerialization.data(withJSONObject: outer)
+        let proposal = try TaskAiResponseParser.parse(String(decoding: data, as: UTF8.self))
+
+        XCTAssertEqual(proposal.steps, ["[인간] 설계", "[AI] 구현", "[인간] 검증"])
+        XCTAssertEqual(proposal.memo, "검증 기준 확인")
+        XCTAssertNil(proposal.body)
+        XCTAssertTrue(proposal.hasChanges)
+    }
+
+    func testTaskAiRejectsStepWithoutHumanOrAiOwner() throws {
+        XCTAssertThrowsError(try TaskAiResponseParser.parse(#"{"reply":"제안","steps":["상세 구현"],"memo":null,"body":null}"#)) {
+            XCTAssertTrue($0.localizedDescription.contains("실행 주체"))
+        }
+    }
+
+    func testTaskAiPromptCarriesTaskContextAndCoarseMeasurementRule() throws {
+        let task = try fixture()
+        let prompt = TaskAiPrompt.build(
+            task: task,
+            messages: [TaskAiMessage(role: .user, text: "단계를 짧게 바꿔줘")]
+        )
+
+        XCTAssertTrue(prompt.contains(task.id))
+        XCTAssertTrue(prompt.contains("랏코 이관"))
+        XCTAssertTrue(prompt.contains("[인간] 설계"))
+        XCTAssertTrue(prompt.contains("세부 체크리스트나 작업 지시서가 아니다"))
+        XCTAssertTrue(prompt.contains("파일은 직접 수정하지 않는다"))
+        XCTAssertTrue(prompt.contains("사용자: 단계를 짧게 바꿔줘"))
+    }
+
+    func testTaskAiStepReplacementPreservesRenamedAndReorderedTiming() {
+        let state = remapStepState(
+            oldSteps: ["[AI] 조사", "[AI] 구현", "[인간] 검증"],
+            newSteps: ["[AI] 구현", "[인간] 검증", "[인간] 판단"],
+            oldMilliseconds: [5_000, 10_000, 20_000],
+            currentStep: 2
+        )
+
+        XCTAssertEqual(state.milliseconds, [10_000, 20_000, 5_000])
+        XCTAssertEqual(state.currentStep, 1)
+    }
+
+    @MainActor
+    func testTaskAiAppliesThroughStorePreservingTimerAndRejectsStaleProposal() throws {
+        let original = try fixture()
+        let store = RatkoStore(configuration: RatkoConfiguration(vaultPath: root.path))
+        let proposal = TaskAiProposal(
+            reply: "짧게 바꿉니다.",
+            steps: ["[AI] 조사", "[인간] 검증"],
+            memo: nil,
+            body: nil
+        )
+
+        XCTAssertNil(store.applyTaskAiProposal(
+            taskId: original.id,
+            proposal: proposal,
+            expectedUpdatedAt: original.updatedAt
+        ))
+        let updated = try repository.parseTask(at: original.url)
+        XCTAssertEqual(updated.steps, ["[AI] 조사", "[인간] 검증"])
+        XCTAssertEqual(updated.stepSeconds, [10, 0])
+        XCTAssertEqual(updated.currentStep, 2)
+
+        let staleError = store.applyTaskAiProposal(
+            taskId: original.id,
+            proposal: proposal,
+            expectedUpdatedAt: original.updatedAt
+        )
+        XCTAssertTrue(staleError?.contains("태스크가 바뀌었습니다") == true)
     }
 
     private func fixture() throws -> TaskCard {

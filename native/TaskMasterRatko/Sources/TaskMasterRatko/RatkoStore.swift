@@ -10,6 +10,7 @@ final class RatkoStore: ObservableObject {
     @Published private(set) var aiFeedback: AiFeedback?
     @Published private(set) var aiFeedbackState: AiFeedbackRunState = .idle
     @Published private(set) var aiFeedbackStartedAt: Date?
+    @Published private(set) var taskAiStepFillRequests: [String: UUID] = [:]
     @Published var lastError: String?
 
     let configuration: RatkoConfiguration?
@@ -91,6 +92,14 @@ final class RatkoStore: ObservableObject {
 
     func timer(for taskId: String) -> TimerRecord? {
         timers.first { $0.taskId == taskId }
+    }
+
+    func task(for taskId: String) -> TaskCard? {
+        tasks.first { $0.id == taskId }
+    }
+
+    func requestTaskAiStepFill(_ taskId: String) {
+        taskAiStepFillRequests[taskId] = UUID()
     }
 
     func elapsed(for timer: TimerRecord) -> Double {
@@ -313,6 +322,66 @@ final class RatkoStore: ObservableObject {
             _ = try repository.appendMemo(to: task, text: text)
             reload()
         } catch { lastError = error.localizedDescription }
+    }
+
+    /// AI는 JSON 제안만 만들고, 최신 파일 확인과 타이머 보존을 포함한 실제 적용은 랏코가 맡는다.
+    /// nil이면 성공, 문자열이면 적용하지 않은 사유다.
+    func applyTaskAiProposal(
+        taskId: String,
+        proposal: TaskAiProposal,
+        expectedUpdatedAt: String
+    ) -> String? {
+        guard let repository, var task = tasks.first(where: { $0.id == taskId }) else {
+            return "태스크를 찾지 못했습니다."
+        }
+        guard task.updatedAt == expectedUpdatedAt else {
+            return "AI가 답하는 동안 태스크가 바뀌었습니다. 최신 내용으로 다시 요청해 주세요."
+        }
+        if let body = proposal.body,
+           !body.split(separator: "\n", omittingEmptySubsequences: false).contains(where: { $0.hasPrefix("# ") }) {
+            return "본문 변경안에 태스크 제목이 없어 적용하지 않았습니다."
+        }
+
+        do {
+            if let newSteps = proposal.steps {
+                let timestamp = Date().millisecondsSince1970
+                var oldMilliseconds = task.stepSeconds.map { Double($0) * 1_000 }
+                let timerIndex = timers.firstIndex(where: { $0.taskId == taskId })
+                if let index = timerIndex {
+                    if timers[index].phase == .running { Self.capture(timer: &timers[index], at: timestamp) }
+                    oldMilliseconds = normalizedStepMilliseconds(timer: timers[index], task: task)
+                }
+                let remapped = remapStepState(
+                    oldSteps: task.steps,
+                    newSteps: newSteps,
+                    oldMilliseconds: oldMilliseconds,
+                    currentStep: task.currentStep
+                )
+                let seconds = remapped.milliseconds.map { $0 <= 0 ? 0 : max(1, Int(($0 / 1_000).rounded())) }
+                task = try repository.updateTask(
+                    task,
+                    steps: newSteps,
+                    currentStep: .some(remapped.currentStep),
+                    stepSeconds: seconds
+                )
+                if let index = timerIndex {
+                    timers[index].stepAccumulatedMs = remapped.milliseconds
+                    timers[index].activeStep = remapped.currentStep
+                    timers[index].stepRunningSince = timers[index].phase == .running && remapped.currentStep != nil
+                        ? timestamp
+                        : nil
+                    try repository.saveTimers(timers)
+                }
+            }
+            if let body = proposal.body { task = try repository.updateTask(task, body: body) }
+            if let memo = proposal.memo { task = try repository.appendMemo(to: task, text: memo) }
+            lastError = nil
+            reload()
+            return nil
+        } catch {
+            lastError = error.localizedDescription
+            return error.localizedDescription
+        }
     }
 
     func openTask(_ task: TaskCard) {
