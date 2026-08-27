@@ -12,6 +12,9 @@ final class RatkoStore: ObservableObject {
     @Published private(set) var aiFeedbackState: AiFeedbackRunState = .idle
     @Published private(set) var aiFeedbackStartedAt: Date?
     @Published private(set) var taskAiStepFillRequests: [String: UUID] = [:]
+    @Published private(set) var aiSessionReports: [AiSessionReport] = []
+    @Published private(set) var aiSessionScanState: AiSessionScanState = .idle
+    @Published private(set) var aiSessionLastScannedAt: Date?
     @Published var lastError: String?
 
     let configuration: RatkoConfiguration?
@@ -91,6 +94,22 @@ final class RatkoStore: ObservableObject {
     var aiFeedbackRunningSeconds: Int {
         guard let aiFeedbackStartedAt else { return 0 }
         return max(0, Int(now.timeIntervalSince(aiFeedbackStartedAt)))
+    }
+
+    var interactiveAiSessionReports: [AiSessionReport] {
+        aiSessionReports.filter { $0.kind == .interactive }
+    }
+
+    var automationAiSessionReports: [AiSessionReport] {
+        aiSessionReports.filter { $0.kind != .interactive }
+    }
+
+    var runningAiSessionCount: Int {
+        interactiveAiSessionReports.filter { $0.activity == .running }.count
+    }
+
+    var waitingAiSessionCount: Int {
+        interactiveAiSessionReports.filter { $0.activity == .waitingForHuman }.count
     }
 
     func timer(for taskId: String) -> TimerRecord? {
@@ -175,6 +194,25 @@ final class RatkoStore: ObservableObject {
             self.reloadAiFeedback(force: true)
             self.aiFeedbackStartedAt = nil
             self.aiFeedbackState = result.succeeded ? .idle : .error(result.message)
+        }
+    }
+
+    func scanAiSessions() {
+        guard aiSessionScanState != .running else { return }
+        aiSessionScanState = .running
+        let taskSnapshot = tasks
+        let timerSnapshot = timers
+        Task { [weak self] in
+            let result = await AiSessionScanner.scan(tasks: taskSnapshot, timers: timerSnapshot)
+            guard let self else { return }
+            switch result {
+            case .success(let reports):
+                self.aiSessionReports = reports
+                self.aiSessionLastScannedAt = Date()
+                self.aiSessionScanState = .loaded
+            case .failure(let error):
+                self.aiSessionScanState = .error(error.localizedDescription)
+            }
         }
     }
 

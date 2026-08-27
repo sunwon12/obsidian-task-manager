@@ -460,6 +460,11 @@ struct TaskMasterRatkoApp: App {
         .defaultSize(width: 420, height: 260)
         .windowStyle(.hiddenTitleBar)
 
+        Window("AI 세션 점검", id: "ratko-ai-sessions") {
+            AiSessionsView(store: store)
+        }
+        .defaultSize(width: 700, height: 720)
+
         WindowGroup("태스크 AI", for: String.self) { $taskId in
             if let taskId {
                 TaskAiView(store: store, taskId: taskId)
@@ -497,6 +502,7 @@ struct RatkoPanel: View {
                             .background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                     }
                     aiFeedbackSection
+                    aiSessionsSection
                     taskSections
                 }
                 .padding(14)
@@ -605,6 +611,42 @@ struct RatkoPanel: View {
         }
         .padding(12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var aiSessionsSection: some View {
+        Button {
+            store.scanAiSessions()
+            RatkoAiSessionsWindowPresentation.open(using: openWindow)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "waveform.path.ecg")
+                    .font(.title3)
+                    .foregroundStyle(.blue)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text("AI 세션 점검").font(.caption).bold()
+                        if store.aiSessionScanState == .running {
+                            ProgressView().controlSize(.mini)
+                        }
+                    }
+                    if store.aiSessionLastScannedAt == nil {
+                        Text("요청할 때만 열린 Claude·Codex 로그를 읽습니다.")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    } else {
+                        Text("AI 진행 \(store.runningAiSessionCount) · 내 차례 \(store.waitingAiSessionCount) · 자동화 제외 \(store.automationAiSessionReports.count)")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption).foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityLabel("AI 세션 점검 열기")
     }
 
     private var header: some View {
