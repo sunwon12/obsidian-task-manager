@@ -9,9 +9,14 @@ enum TaskStatus: String, CaseIterable, Codable {
     case done
 }
 
-enum RatkoTaskList {
+enum RatkoTaskList: Equatable {
     case focus
     case next
+}
+
+struct RatkoTaskDropLocation: Equatable {
+    let list: RatkoTaskList
+    let beforeTaskId: String?
 }
 
 struct RatkoTaskOrder: Equatable {

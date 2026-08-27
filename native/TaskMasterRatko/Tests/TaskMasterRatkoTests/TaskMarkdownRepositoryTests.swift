@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import XCTest
 @testable import TaskMasterRatko
@@ -91,6 +92,10 @@ final class TaskMarkdownRepositoryTests: XCTestCase {
             RatkoDragAutoScroll.velocity(pointerY: 110, viewportMinY: 100, viewportMaxY: 500),
             0
         )
+        XCTAssertGreaterThan(
+            abs(RatkoDragAutoScroll.velocity(pointerY: 101, viewportMinY: 100, viewportMaxY: 500)),
+            abs(RatkoDragAutoScroll.velocity(pointerY: 140, viewportMinY: 100, viewportMaxY: 500))
+        )
     }
 
     func testTaskDragAutoScrollClampsAtDocumentBounds() {
@@ -106,6 +111,29 @@ final class TaskMarkdownRepositoryTests: XCTestCase {
             RatkoDragAutoScroll.nextOffset(current: 120, velocity: 7, minimum: 0, maximum: 300),
             127
         )
+    }
+
+    @MainActor
+    func testTaskDragFindsLargestScrollViewContainingPanelContent() {
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 600))
+        let window = NSWindow(
+            contentRect: root.frame,
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = root
+        let taskScrollView = NSScrollView(frame: NSRect(x: 0, y: 60, width: 400, height: 480))
+        let nestedEditor = NSScrollView(frame: NSRect(x: 100, y: 200, width: 180, height: 80))
+        root.addSubview(taskScrollView)
+        root.addSubview(nestedEditor)
+
+        let resolved = RatkoScrollViewLookup.largestContaining(
+            pointInWindow: NSPoint(x: 150, y: 230),
+            root: root
+        )
+
+        XCTAssertTrue(resolved === taskScrollView)
     }
 
     func testCreatesPluginCompatibleTaskIdAndMarkdown() throws {
