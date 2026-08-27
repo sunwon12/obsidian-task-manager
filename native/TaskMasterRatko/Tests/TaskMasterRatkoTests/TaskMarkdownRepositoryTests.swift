@@ -71,6 +71,13 @@ final class TaskMarkdownRepositoryTests: XCTestCase {
         XCTAssertEqual(formattedElapsed(3_661_000), "1:01:01")
     }
 
+    func testPanelHeightClampsToUsableScreenAndKeepsUserSize() {
+        XCTAssertEqual(RatkoPanelSizing.clamp(620, visibleScreenHeight: 900), 620)
+        XCTAssertEqual(RatkoPanelSizing.clamp(200, visibleScreenHeight: 900), 360)
+        XCTAssertEqual(RatkoPanelSizing.clamp(1_000, visibleScreenHeight: 900), 884)
+        XCTAssertEqual(RatkoPanelSizing.maximumHeight(visibleScreenHeight: 300), 360)
+    }
+
     func testCreatesPluginCompatibleTaskIdAndMarkdown() throws {
         let task = try repository.createTask(title: "새 작업")
         XCTAssertNotNil(task.id.range(of: "^task_[0-9A-HJKMNP-TV-Z]{26}$", options: .regularExpression))

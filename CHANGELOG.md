@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same task AI entry points. The model has read-only vault tools and returns JSON proposals only.
   Ratko shows the proposed changes for apply/discard, rejects stale proposals, and preserves the
   active step and measured seconds when accepted steps are renamed or reordered.
+- The Swift quick panel has a visible bottom resize grip. Dragging it vertically grows or shrinks
+  the task list while keeping the header and footer in place; the chosen height persists across
+  panel and app reopen and is clamped to the current screen's usable height.
 
 ### Changed
 

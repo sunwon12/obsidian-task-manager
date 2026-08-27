@@ -1,6 +1,19 @@
 import AppKit
 import SwiftUI
 
+enum RatkoPanelSizing {
+    static let minimumHeight = 360.0
+    static let defaultHeight = 520.0
+
+    static func maximumHeight(visibleScreenHeight: Double) -> Double {
+        max(minimumHeight, visibleScreenHeight - 16)
+    }
+
+    static func clamp(_ height: Double, visibleScreenHeight: Double) -> Double {
+        min(maximumHeight(visibleScreenHeight: visibleScreenHeight), max(minimumHeight, height))
+    }
+}
+
 @main
 struct TaskMasterRatkoApp: App {
     @StateObject private var store: RatkoStore
@@ -46,6 +59,8 @@ struct RatkoPanel: View {
     @Environment(\.openWindow) private var openWindow
     @State private var newTask = ""
     @State private var feedbackExpanded = false
+    @AppStorage("ratko.panel.height") private var panelHeight = RatkoPanelSizing.defaultHeight
+    @State private var resizeStartHeight: Double?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -69,9 +84,13 @@ struct RatkoPanel: View {
             }
             Divider()
             footer
+            resizeHandle
         }
         .frame(width: 400)
-        .frame(maxHeight: 720)
+        .frame(height: CGFloat(clampedPanelHeight))
+        .onAppear {
+            panelHeight = clampedPanelHeight
+        }
     }
 
     private var aiFeedbackSection: some View {
@@ -237,6 +256,43 @@ struct RatkoPanel: View {
         }
         .font(.caption)
         .padding(12)
+    }
+
+    private var resizeHandle: some View {
+        ZStack {
+            Color.clear
+            Capsule()
+                .fill(.tertiary)
+                .frame(width: 42, height: 4)
+        }
+        .frame(height: 16)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    if resizeStartHeight == nil { resizeStartHeight = panelHeight }
+                    let start = resizeStartHeight ?? panelHeight
+                    panelHeight = RatkoPanelSizing.clamp(
+                        start + Double(value.translation.height),
+                        visibleScreenHeight: visibleScreenHeight
+                    )
+                }
+                .onEnded { _ in resizeStartHeight = nil }
+        )
+        .onHover { hovering in
+            hovering ? NSCursor.resizeUpDown.set() : NSCursor.arrow.set()
+        }
+        .help("위아래로 드래그해 패널 높이 조절")
+        .accessibilityLabel("패널 높이 조절")
+        .accessibilityValue("\(Int(clampedPanelHeight)) 포인트")
+    }
+
+    private var visibleScreenHeight: Double {
+        Double((NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.height ?? 800)
+    }
+
+    private var clampedPanelHeight: Double {
+        RatkoPanelSizing.clamp(panelHeight, visibleScreenHeight: visibleScreenHeight)
     }
 
     private func sectionHeader(_ title: String, count: Int) -> some View {
