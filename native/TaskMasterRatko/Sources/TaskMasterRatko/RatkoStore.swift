@@ -7,12 +7,16 @@ final class RatkoStore: ObservableObject {
     @Published private(set) var tasks: [TaskCard] = []
     @Published private(set) var timers: [TimerRecord] = []
     @Published private(set) var now = Date()
+    @Published private(set) var aiFeedback: AiFeedback?
+    @Published private(set) var aiFeedbackState: AiFeedbackRunState = .idle
+    @Published private(set) var aiFeedbackStartedAt: Date?
     @Published var lastError: String?
 
     let configuration: RatkoConfiguration?
     private let repository: TaskMarkdownRepository?
     private var pollTimer: Timer?
     private var tickTimer: Timer?
+    private var aiFeedbackModifiedAt: Date?
 
     init(configuration: RatkoConfiguration) {
         self.configuration = configuration
@@ -20,6 +24,7 @@ final class RatkoStore: ObservableObject {
             vaultURL: configuration.vaultURL,
             dataRoot: configuration.dataRoot
         )
+        reloadAiFeedback(force: true)
         reload()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.reload() }
@@ -69,6 +74,21 @@ final class RatkoStore: ObservableObject {
         }.count
     }
 
+    var isAiFeedbackStale: Bool {
+        guard let aiFeedback else { return true }
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return aiFeedback.date != formatter.string(from: now)
+    }
+
+    var aiFeedbackRunningSeconds: Int {
+        guard let aiFeedbackStartedAt else { return 0 }
+        return max(0, Int(now.timeIntervalSince(aiFeedbackStartedAt)))
+    }
+
     func timer(for taskId: String) -> TimerRecord? {
         timers.first { $0.taskId == taskId }
     }
@@ -116,10 +136,36 @@ final class RatkoStore: ObservableObject {
             if diskTimers != before { try repository.saveTimers(diskTimers) }
             if diskTasks != tasks { tasks = diskTasks }
             if diskTimers != timers { timers = diskTimers }
+            reloadAiFeedback()
             lastError = nil
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    func runAiFeedback() {
+        guard let configuration, aiFeedbackState != .running else { return }
+        aiFeedbackState = .running
+        aiFeedbackStartedAt = Date()
+        Task { [weak self] in
+            let result = await AiFeedbackRunner.run(configuration: configuration)
+            guard let self else { return }
+            self.reloadAiFeedback(force: true)
+            self.aiFeedbackStartedAt = nil
+            self.aiFeedbackState = result.succeeded ? .idle : .error(result.message)
+        }
+    }
+
+    func openAiFeedback() {
+        guard let configuration else { return }
+        var components = URLComponents()
+        components.scheme = "obsidian"
+        components.host = "open"
+        components.queryItems = [
+            URLQueryItem(name: "vault", value: configuration.vaultURL.lastPathComponent),
+            URLQueryItem(name: "file", value: configuration.aiFeedbackPathResolved),
+        ]
+        if let url = components.url { NSWorkspace.shared.open(url) }
     }
 
     func start(_ taskId: String) {
@@ -332,6 +378,25 @@ final class RatkoStore: ObservableObject {
                 timer.stepAccumulatedMs.indices.contains(index) ? timer.stepAccumulatedMs[index] : 0,
                 task.stepSeconds.indices.contains(index) ? Double(task.stepSeconds[index]) * 1_000 : 0
             )
+        }
+    }
+
+    private func reloadAiFeedback(force: Bool = false) {
+        guard let configuration else { return }
+        let url = configuration.aiFeedbackURL
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            aiFeedback = nil
+            aiFeedbackModifiedAt = nil
+            return
+        }
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            let modifiedAt = attributes[.modificationDate] as? Date
+            if !force, modifiedAt == aiFeedbackModifiedAt { return }
+            aiFeedback = AiFeedbackParser.parse(try String(contentsOf: url, encoding: .utf8))
+            aiFeedbackModifiedAt = modifiedAt
+        } catch {
+            if aiFeedbackState != .running { aiFeedbackState = .error(error.localizedDescription) }
         }
     }
 

@@ -3,10 +3,37 @@ import Foundation
 struct RatkoConfiguration: Codable {
     let vaultPath: String
     var dataRoot: String = "TaskMaster"
+    var aiFeedbackPath: String?
+    var aiFeedbackBinary: String?
+    var aiFeedbackPrompt: String?
+    var aiFeedbackTimeoutMinutes: Int?
 
     var vaultURL: URL {
         URL(fileURLWithPath: (vaultPath as NSString).expandingTildeInPath, isDirectory: true)
             .standardizedFileURL
+    }
+
+    var aiFeedbackPathResolved: String {
+        nonEmpty(aiFeedbackPath) ?? "02_일상/03_성찰/일일-일정-피드백.md"
+    }
+
+    var aiFeedbackURL: URL {
+        vaultURL.appendingPathComponent(aiFeedbackPathResolved)
+    }
+
+    var aiFeedbackBinaryResolved: String {
+        if let configured = nonEmpty(aiFeedbackBinary) {
+            return (configured as NSString).expandingTildeInPath
+        }
+        let localClaude = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".local/bin/claude").path
+        return FileManager.default.isExecutableFile(atPath: localClaude) ? localClaude : "claude"
+    }
+
+    var aiFeedbackPromptResolved: String { nonEmpty(aiFeedbackPrompt) ?? "/daily-schedule-feedback" }
+
+    var aiFeedbackTimeoutMinutesResolved: Int {
+        min(60, max(1, aiFeedbackTimeoutMinutes ?? 10))
     }
 
     static func load(
@@ -39,6 +66,11 @@ struct RatkoConfiguration: Codable {
         }
         throw RatkoError.configurationMissing
     }
+}
+
+private func nonEmpty(_ value: String?) -> String? {
+    let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return trimmed.isEmpty ? nil : trimmed
 }
 
 enum RatkoError: LocalizedError {

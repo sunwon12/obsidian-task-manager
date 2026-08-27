@@ -86,6 +86,43 @@ final class TaskMarkdownRepositoryTests: XCTestCase {
         XCTAssertEqual(ratkoDefaults.integer(forKey: MenuBarPlacement.ratkoPositionKey), 263)
     }
 
+    func testParsesLatestAiFeedbackSection() {
+        let feedback = AiFeedbackParser.parse("""
+        # 일일 일정 피드백
+
+        ## 2026-08-27 (목)
+
+        **스냅샷** — 오늘 작업은 세 장이다.
+
+        - **첫 결론** — `TaskMaster`에 집중한다.
+        - 일반 불릿도 보존한다.
+
+        **오늘의 하이라이트** — 가장 중요한 한 장부터 끝낸다.
+
+        ## 2026-08-26 (수)
+
+        **스냅샷** — 어제 기록.
+        """)
+
+        XCTAssertEqual(feedback?.date, "2026-08-27")
+        XCTAssertEqual(feedback?.weekday, "목")
+        XCTAssertEqual(feedback?.snapshot, "오늘 작업은 세 장이다.")
+        XCTAssertEqual(feedback?.bullets.first?.lead, "첫 결론")
+        XCTAssertEqual(feedback?.bullets.first?.body, "TaskMaster에 집중한다.")
+        XCTAssertEqual(feedback?.highlight, "가장 중요한 한 장부터 끝낸다.")
+    }
+
+    func testLegacyConfigurationUsesAiFeedbackDefaults() throws {
+        let configuration = try JSONDecoder().decode(
+            RatkoConfiguration.self,
+            from: Data(#"{"vaultPath":"/tmp/vault","dataRoot":"TaskMaster"}"#.utf8)
+        )
+
+        XCTAssertEqual(configuration.aiFeedbackPathResolved, "02_일상/03_성찰/일일-일정-피드백.md")
+        XCTAssertEqual(configuration.aiFeedbackPromptResolved, "/daily-schedule-feedback")
+        XCTAssertEqual(configuration.aiFeedbackTimeoutMinutesResolved, 10)
+    }
+
     private func fixture() throws -> TaskCard {
         let url = repository.tasksURL.appendingPathComponent("fixture - task_01ABCDEF.md")
         let raw = """

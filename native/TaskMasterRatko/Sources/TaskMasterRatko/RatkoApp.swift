@@ -21,7 +21,7 @@ struct TaskMasterRatkoApp: App {
         MenuBarExtra {
             RatkoPanel(store: store)
         } label: {
-            Text("🦦")
+            RatkoIconView(kind: .menuBar, size: 18)
                 .accessibilityLabel("TaskMaster 랏코")
         }
         .menuBarExtraStyle(.window)
@@ -38,6 +38,7 @@ struct RatkoPanel: View {
     @ObservedObject var store: RatkoStore
     @Environment(\.openWindow) private var openWindow
     @State private var newTask = ""
+    @State private var feedbackExpanded = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -53,6 +54,7 @@ struct RatkoPanel: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                     }
+                    aiFeedbackSection
                     focusSection
                     nextSection
                 }
@@ -65,9 +67,89 @@ struct RatkoPanel: View {
         .frame(maxHeight: 720)
     }
 
+    private var aiFeedbackSection: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 7) {
+                Image(systemName: "sparkles").foregroundStyle(.purple)
+                Text("AI 피드백").font(.caption).bold()
+                if store.isAiFeedbackStale {
+                    Text("이전 기록")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.orange)
+                }
+                Spacer()
+                if store.aiFeedback != nil {
+                    Button { feedbackExpanded.toggle() } label: {
+                        Image(systemName: feedbackExpanded ? "chevron.up" : "chevron.down")
+                    }
+                    .buttonStyle(.plain)
+                    .help(feedbackExpanded ? "접기" : "전체 피드백 보기")
+                }
+            }
+
+            if let feedback = store.aiFeedback {
+                if feedbackExpanded {
+                    Text("\(feedback.date)\(feedback.weekday.isEmpty ? "" : " (\(feedback.weekday))")")
+                        .font(.caption2).foregroundStyle(.secondary)
+                    if !feedback.snapshot.isEmpty {
+                        Text(feedback.snapshot).font(.caption).fixedSize(horizontal: false, vertical: true)
+                    }
+                    ForEach(feedback.bullets) { bullet in
+                        HStack(alignment: .top, spacing: 6) {
+                            Text("•").foregroundStyle(.purple)
+                            Text(bullet.lead.isEmpty ? bullet.body : "\(bullet.lead) — \(bullet.body)")
+                                .font(.caption)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                if !feedback.highlight.isEmpty {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("오늘의 하이라이트").font(.caption2).bold().foregroundStyle(.purple)
+                        Text(feedback.highlight).font(.caption).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(9)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                }
+            } else {
+                Text("아직 생성된 피드백이 없습니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            if case .error(let message) = store.aiFeedbackState {
+                Text(message).font(.caption2).foregroundStyle(.red).lineLimit(2)
+            }
+
+            HStack {
+                Button {
+                    store.runAiFeedback()
+                } label: {
+                    HStack(spacing: 5) {
+                        if store.aiFeedbackState == .running {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("생성 중 · \(store.aiFeedbackRunningSeconds)초")
+                        } else {
+                            Label("피드백 받기", systemImage: "arrow.clockwise")
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(store.aiFeedbackState == .running)
+                Spacer()
+                Button("전체 열기") { store.openAiFeedback() }.buttonStyle(.plain)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
     private var header: some View {
         HStack(spacing: 10) {
-            Text("🦦").font(.title2)
+            RatkoIconView(kind: .portrait, size: 28)
             VStack(alignment: .leading, spacing: 2) {
                 Text("오늘의 랏코").font(.headline)
                 Text("\(store.focusTasks.count)개 집중 · 오늘 \(store.doneToday)개 완료")
@@ -152,6 +234,52 @@ struct RatkoPanel: View {
     private func createTask() {
         store.createTask(title: newTask)
         newTask = ""
+    }
+}
+
+private struct RatkoIconView: View {
+    enum Kind {
+        case menuBar
+        case portrait
+    }
+
+    let kind: Kind
+    let size: CGFloat
+
+    var body: some View {
+        Group {
+            if let image = image {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+            } else {
+                Image(systemName: "timer")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            }
+        }
+        .frame(width: size, height: size)
+    }
+
+    private var image: NSImage? {
+        switch kind {
+        case .menuBar: RatkoImages.menuBar
+        case .portrait: RatkoImages.portrait
+        }
+    }
+}
+
+private enum RatkoImages {
+    static let menuBar = load(named: "taskmaster-menubar-32")
+    static let portrait = load(named: "taskmaster-menubar-otter")
+
+    private static func load(named name: String) -> NSImage? {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "png"),
+              let image = NSImage(contentsOf: url)
+        else { return nil }
+        image.isTemplate = false
+        return image
     }
 }
 
@@ -252,7 +380,12 @@ struct FloatingFocusView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack { Text("🦦 집중 중").font(.headline); Spacer(); Text("\(store.focusTasks.count)개").foregroundStyle(.secondary) }
+            HStack {
+                RatkoIconView(kind: .portrait, size: 24)
+                Text("집중 중").font(.headline)
+                Spacer()
+                Text("\(store.focusTasks.count)개").foregroundStyle(.secondary)
+            }
             if store.focusTasks.isEmpty {
                 Text("현재 작업이 없습니다").foregroundStyle(.secondary)
             }

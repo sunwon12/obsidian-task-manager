@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   park it off-screen.
 - The Ratko installer now stops an already running copy before replacing and reopening the app, so
   an update cannot leave the previous binary running until the next login.
+- Replaced the temporary otter emoji in the Swift menu bar and panel header with TaskMaster's
+  original full-color Ratko artwork, packaged from the existing `src/assets` files.
+- Sized the menu-bar artwork to the largest unclipped macOS content height (18 points); the
+  previous 22-point SwiftUI frame touched the menu-bar bounds and cropped Ratko's head and feet.
+- Restored the AI feedback section in the Swift quick panel. It parses the newest section of the
+  existing daily-feedback Markdown, shows the highlight while collapsed and the complete feedback
+  when expanded, opens the source note, and can run the existing `daily-schedule-feedback` skill
+  on demand. Scheduled generation remains owned by the Obsidian plugin to avoid duplicate runs.
 
 ## [0.19.0] - 2026-08-27
 

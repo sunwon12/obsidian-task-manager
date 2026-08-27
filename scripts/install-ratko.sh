@@ -27,6 +27,8 @@ fi
 
 mkdir -p "$CONTENTS_DIR/MacOS" "$CONTENTS_DIR/Resources" "$CONFIG_DIR" "${LAUNCH_AGENT:h}"
 cp "$PROJECT_DIR/.build/release/TaskMasterRatko" "$CONTENTS_DIR/MacOS/TaskMasterRatko"
+cp "$SCRIPT_DIR/../src/assets/taskmaster-menubar-32.png" "$CONTENTS_DIR/Resources/taskmaster-menubar-32.png"
+cp "$SCRIPT_DIR/../src/assets/taskmaster-menubar-otter.png" "$CONTENTS_DIR/Resources/taskmaster-menubar-otter.png"
 
 cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -44,7 +46,16 @@ PLIST
 /usr/bin/python3 - "$CONFIG_DIR/config.json" "$VAULT_PATH" <<'PY'
 import json, pathlib, sys
 path = pathlib.Path(sys.argv[1])
-path.write_text(json.dumps({"vaultPath": sys.argv[2], "dataRoot": "TaskMaster"}, ensure_ascii=False, indent=2) + "\n")
+try:
+    settings = json.loads(path.read_text()) if path.exists() else {}
+except (json.JSONDecodeError, OSError):
+    settings = {}
+settings.update({"vaultPath": sys.argv[2], "dataRoot": "TaskMaster"})
+settings.setdefault("aiFeedbackPath", "02_일상/03_성찰/일일-일정-피드백.md")
+settings.setdefault("aiFeedbackBinary", "~/.local/bin/claude")
+settings.setdefault("aiFeedbackPrompt", "/daily-schedule-feedback")
+settings.setdefault("aiFeedbackTimeoutMinutes", 10)
+path.write_text(json.dumps(settings, ensure_ascii=False, indent=2) + "\n")
 PY
 
 cat > "$LAUNCH_AGENT" <<PLIST
