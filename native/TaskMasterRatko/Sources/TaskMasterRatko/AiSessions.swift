@@ -31,6 +31,7 @@ struct AiSessionReport: Identifiable, Equatable {
     let pid: Int
     let tty: String
     let cwd: String
+    let sessionKey: String?
     let transcriptPath: String?
     let summary: String
     let aiMilliseconds: Double
@@ -47,6 +48,48 @@ enum AiSessionScanState: Equatable {
     case running
     case loaded
     case error(String)
+}
+
+struct AiSessionTaskDraft: Equatable {
+    let title: String
+    let status: TaskStatus
+    let jiraKey: String?
+    let sessionKey: String
+    let steps: [String]
+    let currentStep: Int
+    let bodyDetails: String?
+
+    static func make(from report: AiSessionReport) -> AiSessionTaskDraft? {
+        guard report.kind == .interactive,
+              report.taskId == nil,
+              let sessionKey = report.sessionKey
+        else { return nil }
+
+        let folder = URL(fileURLWithPath: report.cwd).lastPathComponent
+        let jiraKey = AiSessionScanner.jiraKeys(cwd: report.cwd, summary: report.summary)
+            .first?.uppercased()
+        let headline = report.transcriptPath == nil
+            ? "\(report.provider.rawValue) 세션 작업"
+            : report.summary.split(whereSeparator: \Character.isWhitespace).joined(separator: " ")
+        let fallback = headline.isEmpty ? "AI 세션 작업" : String(headline.prefix(72))
+        let title = jiraKey.map { "\($0) \(folder)" } ?? "\(folder) — \(fallback)"
+        let summaryDetails = report.transcriptPath == nil ? "" : "\n\n\(report.summary)"
+        let details = jiraKey == nil ? """
+        AI 세션 점검에서 자동 생성됨.\(summaryDetails)
+
+        - 도구: \(report.provider.rawValue)
+        - 작업 폴더: `\(report.cwd)`
+        """ : nil
+        return AiSessionTaskDraft(
+            title: title,
+            status: .todo,
+            jiraKey: jiraKey,
+            sessionKey: sessionKey,
+            steps: ["[AI] 진행", "[인간] 검증"],
+            currentStep: report.activity == .waitingForHuman ? 2 : 1,
+            bodyDetails: details
+        )
+    }
 }
 
 struct AiProcess: Equatable {
@@ -118,7 +161,18 @@ enum AiSessionScanner {
             RatkoUiTestDiagnostics.log(
                 "ai-session pid=\(process.pid) provider=\(process.provider.rawValue) transcript=\(transcript?.lastPathComponent ?? "none") parsed=\(facts != nil)"
             )
-            let link = linkTask(cwd: process.cwd ?? "", summary: facts?.summary ?? "", tasks: tasks)
+            let transcriptSessionKey = facts.map { "\(process.provider.rawValue.lowercased()):\($0.id)" }
+            let cwdSessionKey = process.cwd.map {
+                "\(process.provider.rawValue.lowercased()):cwd:\($0)"
+            }
+            let sessionKey = transcriptSessionKey ?? cwdSessionKey
+            let link = linkTask(
+                cwd: process.cwd ?? "",
+                summary: facts?.summary ?? "",
+                sessionKey: sessionKey,
+                alternateSessionKeys: [transcriptSessionKey, cwdSessionKey].compactMap { $0 },
+                tasks: tasks
+            )
             let human = link.flatMap { linked in
                 timers.first(where: { $0.taskId == linked.id }).map { timer in
                     humanMilliseconds(task: linked, timer: timer, now: now)
@@ -132,6 +186,7 @@ enum AiSessionScanner {
                 pid: process.pid,
                 tty: process.tty,
                 cwd: process.cwd ?? "경로 확인 불가",
+                sessionKey: sessionKey,
                 transcriptPath: facts == nil ? nil : transcript?.path,
                 summary: facts?.summary ?? missingTranscriptMessage(for: process.provider),
                 aiMilliseconds: facts?.aiMilliseconds ?? 0,
@@ -357,15 +412,35 @@ enum AiSessionScanner {
         }
     }
 
-    static func linkTask(cwd: String, summary: String, tasks: [TaskCard]) -> TaskCard? {
-        let source = "\(cwd) \(summary)"
-        guard let expression = try? NSRegularExpression(pattern: #"[A-Z][A-Z0-9]+-\d+"#) else { return nil }
-        let keys = expression.matches(in: source, range: NSRange(source.startIndex..., in: source)).compactMap { match in
-            Range(match.range, in: source).map { String(source[$0]).lowercased() }
+    static func linkTask(
+        cwd: String,
+        summary: String,
+        sessionKey: String? = nil,
+        alternateSessionKeys: [String] = [],
+        tasks: [TaskCard]
+    ) -> TaskCard? {
+        let sessionKeys = Set(([sessionKey].compactMap { $0 }) + alternateSessionKeys)
+        if let linked = tasks.first(where: {
+            $0.status != .done && $0.aiSessionKey.map(sessionKeys.contains) == true
+        }) {
+            return linked
         }
+        let keys = jiraKeys(cwd: cwd, summary: summary)
         return tasks.first { task in
+            if let jiraKey = task.jiraKey?.lowercased(), keys.contains(jiraKey) { return true }
             let searchable = "\(task.title) \(task.body) \(task.url.absoluteString)".lowercased()
             return keys.contains { searchable.contains($0) }
+        }
+    }
+
+    static func jiraKeys(cwd: String, summary: String) -> [String] {
+        let source = "\(cwd) \(summary)"
+        guard let expression = try? NSRegularExpression(
+            pattern: #"\b[A-Z][A-Z0-9_]+-\d+\b"#,
+            options: [.caseInsensitive]
+        ) else { return [] }
+        return expression.matches(in: source, range: NSRange(source.startIndex..., in: source)).compactMap { match in
+            Range(match.range, in: source).map { String(source[$0]).lowercased() }
         }
     }
 

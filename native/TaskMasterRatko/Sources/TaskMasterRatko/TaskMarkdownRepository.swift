@@ -56,6 +56,8 @@ struct TaskMarkdownRepository {
             stepSeconds: seconds,
             actualMd: document.double("actualMd"),
             due: document.string("due"),
+            jiraKey: document.string("jiraKey"),
+            aiSessionKey: document.string("ratkoAiSessionKey"),
             updatedAt: document.string("updatedAt") ?? "",
             body: document.body
         )
@@ -98,7 +100,15 @@ struct TaskMarkdownRepository {
         return try parseTask(at: task.url)
     }
 
-    func createTask(title: String) throws -> TaskCard {
+    func createTask(
+        title: String,
+        status: TaskStatus = .todo,
+        jiraKey: String? = nil,
+        aiSessionKey: String? = nil,
+        steps: [String] = [],
+        currentStep: Int? = nil,
+        bodyDetails: String? = nil
+    ) throws -> TaskCard {
         try fileManager.createDirectory(at: tasksURL, withIntermediateDirectories: true)
         let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let id = "task_\(Self.randomCrockford(length: 26))"
@@ -109,20 +119,29 @@ struct TaskMarkdownRepository {
             .prefix(100)
         let url = tasksURL.appendingPathComponent("\(safeTitle) - \(shortId).md")
         let now = Self.isoNow()
-        let text = """
-        ---
-        schemaVersion: 1
-        id: \(id)
-        type: task
-        status: todo
-        project: null
-        priority: null
-        createdAt: \(now)
-        updatedAt: \(now)
-        ---
-
-        # \(normalized)
-        """
+        var frontmatter = [
+            "schemaVersion: 1",
+            "id: \(id)",
+            "type: task",
+            "status: \(status.rawValue)",
+            "project: null",
+            "priority: null",
+            "createdAt: \(now)",
+        ]
+        if let jiraKey { frontmatter.append("jiraKey: \(MarkdownDocument.encodeScalar(jiraKey))") }
+        if let aiSessionKey {
+            frontmatter.append("ratkoAiSessionKey: \(MarkdownDocument.encodeScalar(aiSessionKey))")
+        }
+        for (index, step) in steps.enumerated() {
+            frontmatter.append("step\(index + 1): \(MarkdownDocument.encodeScalar(step))")
+        }
+        if !steps.isEmpty {
+            frontmatter.append("currentStep: \(min(max(1, currentStep ?? 1), steps.count))")
+        }
+        frontmatter.append("updatedAt: \(now)")
+        let details = bodyDetails?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let body = details.isEmpty ? "# \(normalized)" : "# \(normalized)\n\n\(details)"
+        let text = "---\n\(frontmatter.joined(separator: "\n"))\n---\n\n\(body)\n"
         try text.write(to: url, atomically: true, encoding: .utf8)
         return try parseTask(at: url)
     }

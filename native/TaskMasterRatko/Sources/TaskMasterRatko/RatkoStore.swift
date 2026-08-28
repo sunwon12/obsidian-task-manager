@@ -15,6 +15,7 @@ final class RatkoStore: ObservableObject {
     @Published private(set) var aiSessionReports: [AiSessionReport] = []
     @Published private(set) var aiSessionScanState: AiSessionScanState = .idle
     @Published private(set) var aiSessionLastScannedAt: Date?
+    @Published private(set) var aiSessionCreatedTaskCount = 0
     @Published var lastError: String?
 
     let configuration: RatkoConfiguration?
@@ -198,6 +199,11 @@ final class RatkoStore: ObservableObject {
     }
 
     func scanAiSessions() {
+        aiSessionCreatedTaskCount = 0
+        scanAiSessionsPass(autoCreateTasks: true)
+    }
+
+    private func scanAiSessionsPass(autoCreateTasks: Bool) {
         guard aiSessionScanState != .running else { return }
         aiSessionScanState = .running
         let taskSnapshot = tasks
@@ -215,6 +221,17 @@ final class RatkoStore: ObservableObject {
             guard let self else { return }
             switch result {
             case .success(let reports):
+                if autoCreateTasks {
+                    let creation = self.createMissingAiSessionTasks(from: reports)
+                    if let error = creation.error { self.lastError = error }
+                    if creation.created > 0 {
+                        self.aiSessionCreatedTaskCount = creation.created
+                        self.reload()
+                        self.aiSessionScanState = .idle
+                        self.scanAiSessionsPass(autoCreateTasks: false)
+                        return
+                    }
+                }
                 self.aiSessionReports = reports
                 self.aiSessionLastScannedAt = Date()
                 self.aiSessionScanState = .loaded
@@ -222,6 +239,42 @@ final class RatkoStore: ObservableObject {
                 self.aiSessionScanState = .error(error.localizedDescription)
             }
         }
+    }
+
+    private func createMissingAiSessionTasks(
+        from reports: [AiSessionReport]
+    ) -> (created: Int, error: String?) {
+        guard let repository else { return (0, nil) }
+        var identities = Set<String>()
+        var created = 0
+        var errors: [String] = []
+
+        for draft in reports.compactMap(AiSessionTaskDraft.make) {
+            let identity = draft.jiraKey?.lowercased() ?? draft.sessionKey
+            guard identities.insert(identity).inserted else { continue }
+            let alreadyExists = tasks.contains { task in
+                if task.aiSessionKey == draft.sessionKey { return true }
+                guard let jiraKey = draft.jiraKey, let taskJiraKey = task.jiraKey else { return false }
+                return taskJiraKey.caseInsensitiveCompare(jiraKey) == .orderedSame
+            }
+            if alreadyExists { continue }
+            do {
+                _ = try repository.createTask(
+                    title: draft.title,
+                    status: draft.status,
+                    jiraKey: draft.jiraKey,
+                    aiSessionKey: draft.sessionKey,
+                    steps: draft.steps,
+                    currentStep: draft.currentStep,
+                    bodyDetails: draft.bodyDetails
+                )
+                created += 1
+            } catch {
+                errors.append("\(draft.title): \(error.localizedDescription)")
+            }
+        }
+        let message = errors.isEmpty ? nil : "AI 세션 태스크를 일부 생성하지 못했습니다. \(errors.joined(separator: " / "))"
+        return (created, message)
     }
 
     func connectClaudeLogs() {

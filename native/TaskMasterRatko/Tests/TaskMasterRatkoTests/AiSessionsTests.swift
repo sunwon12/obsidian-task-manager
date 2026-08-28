@@ -103,6 +103,78 @@ final class AiSessionsTests: XCTestCase {
         XCTAssertEqual(linked?.id, "two")
     }
 
+    func testTaskLinkPrefersPersistedSessionKeyWithoutJiraKey() {
+        var linkedTask = task(id: "linked", title: "로컬 작업")
+        linkedTask.aiSessionKey = "codex:cwd:/work/no-ticket-branch"
+
+        let linked = AiSessionScanner.linkTask(
+            cwd: "/work/no-ticket-branch",
+            summary: "조사 중",
+            sessionKey: "codex:session-123",
+            alternateSessionKeys: ["codex:cwd:/work/no-ticket-branch"],
+            tasks: [linkedTask]
+        )
+
+        XCTAssertEqual(linked?.id, "linked")
+    }
+
+    func testAutoTaskDraftCarriesJiraIdentityAndMovesWaitingSessionToHumanStep() throws {
+        let report = AiSessionReport(
+            id: "Codex-100",
+            provider: .codex,
+            kind: .interactive,
+            activity: .waitingForHuman,
+            pid: 100,
+            tty: "ttys001",
+            cwd: "/work/29cm-community-BDCC-1263-add-admin-invitation-apis",
+            sessionKey: "codex:session-1263",
+            transcriptPath: "/tmp/session.jsonl",
+            summary: "Step 1 승인 내용을 ADR로 남겼습니다.",
+            aiMilliseconds: 60_000,
+            waitingMilliseconds: 120_000,
+            phases: [],
+            taskId: nil,
+            taskTitle: nil,
+            humanMilliseconds: 0,
+            lastActivity: nil
+        )
+
+        let draft = try XCTUnwrap(AiSessionTaskDraft.make(from: report))
+
+        XCTAssertEqual(draft.jiraKey, "BDCC-1263")
+        XCTAssertTrue(draft.title.hasPrefix("BDCC-1263 "))
+        XCTAssertEqual(draft.steps, ["[AI] 진행", "[인간] 검증"])
+        XCTAssertEqual(draft.currentStep, 2)
+        XCTAssertNil(draft.bodyDetails, "Jira 동기화가 설명을 백필할 수 있게 비워 둔다")
+    }
+
+    func testAutoTaskDraftCanCaptureProtectedClaudeSessionByCwd() throws {
+        let report = AiSessionReport(
+            id: "Claude-100",
+            provider: .claude,
+            kind: .interactive,
+            activity: .unknown,
+            pid: 100,
+            tty: "ttys001",
+            cwd: "/work/project",
+            sessionKey: "claude:cwd:/work/project",
+            transcriptPath: nil,
+            summary: "Claude 로그 폴더가 아직 연결되지 않았습니다.",
+            aiMilliseconds: 0,
+            waitingMilliseconds: 0,
+            phases: [],
+            taskId: nil,
+            taskTitle: nil,
+            humanMilliseconds: 0,
+            lastActivity: nil
+        )
+
+        let draft = try XCTUnwrap(AiSessionTaskDraft.make(from: report))
+
+        XCTAssertEqual(draft.title, "project — Claude 세션 작업")
+        XCTAssertEqual(draft.sessionKey, "claude:cwd:/work/project")
+    }
+
     private func task(id: String, title: String) -> TaskCard {
         TaskCard(
             id: id,

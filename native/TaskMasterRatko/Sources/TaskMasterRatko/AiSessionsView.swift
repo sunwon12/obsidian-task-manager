@@ -123,6 +123,7 @@ struct AiSessionsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if needsClaudeLogAccess { claudeLogAccessPrompt }
+                    if store.aiSessionCreatedTaskCount > 0 { autoCreatedTasksNotice }
                     scanSummary
                     sessionSection(title: "AI가 진행 중", icon: "bolt.fill", color: .blue, reports: running)
                     sessionSection(title: "내 응답·검증 대기", icon: "person.fill", color: .orange, reports: waiting)
@@ -167,6 +168,16 @@ struct AiSessionsView: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
         }
+    }
+
+    private var autoCreatedTasksNotice: some View {
+        Label(
+            "미연결 AI 세션 \(store.aiSessionCreatedTaskCount)개를 TaskMaster 태스크로 자동 생성했습니다.",
+            systemImage: "checkmark.circle.fill"
+        )
+        .font(.caption)
+        .foregroundStyle(.green)
+        .padding(.horizontal, 2)
     }
 
     private func summaryMetric(value: Int, label: String, color: Color) -> some View {

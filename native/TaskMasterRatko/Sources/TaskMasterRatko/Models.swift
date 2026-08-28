@@ -107,6 +107,8 @@ struct TaskCard: Identifiable, Equatable {
     var stepSeconds: [Int]
     var actualMd: Double?
     var due: String?
+    var jiraKey: String? = nil
+    var aiSessionKey: String? = nil
     var updatedAt: String
     var body: String
 }

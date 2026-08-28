@@ -196,6 +196,21 @@ final class TaskMarkdownRepositoryTests: XCTestCase {
         XCTAssertEqual(task.title, "새 작업")
     }
 
+    func testCreatesAiSessionTaskWithStableIdentityAndJiraKey() throws {
+        let task = try repository.createTask(
+            title: "BDCC-1263 초대장 API",
+            jiraKey: "BDCC-1263",
+            aiSessionKey: "codex:session-1263",
+            steps: ["[AI] 진행", "[인간] 검증"],
+            currentStep: 2
+        )
+
+        XCTAssertEqual(task.jiraKey, "BDCC-1263")
+        XCTAssertEqual(task.aiSessionKey, "codex:session-1263")
+        XCTAssertEqual(task.steps, ["[AI] 진행", "[인간] 검증"])
+        XCTAssertEqual(task.currentStep, 2)
+    }
+
     func testRatkoOrderMovesWithinAndAcrossLists() {
         var order = RatkoTaskOrder(
             focusTaskIds: ["focus-a", "focus-b"],
