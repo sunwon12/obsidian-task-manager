@@ -33,6 +33,7 @@ struct AiSessionReport: Identifiable, Equatable {
     let cwd: String
     let sessionKey: String?
     let transcriptPath: String?
+    let objective: String?
     let summary: String
     let aiMilliseconds: Double
     let waitingMilliseconds: Double
@@ -59,23 +60,24 @@ struct AiSessionTaskDraft: Equatable {
     let currentStep: Int
     let bodyDetails: String?
 
-    static func make(from report: AiSessionReport) -> AiSessionTaskDraft? {
+    static func make(from report: AiSessionReport, title proposedTitle: String) -> AiSessionTaskDraft? {
         guard report.kind == .interactive,
               report.taskId == nil,
+              report.transcriptPath != nil,
+              report.objective != nil,
               let sessionKey = report.sessionKey
         else { return nil }
 
-        let folder = URL(fileURLWithPath: report.cwd).lastPathComponent
         let jiraKey = AiSessionScanner.jiraKeys(cwd: report.cwd, summary: report.summary)
             .first?.uppercased()
-        let headline = report.transcriptPath == nil
-            ? "\(report.provider.rawValue) 세션 작업"
-            : report.summary.split(whereSeparator: \Character.isWhitespace).joined(separator: " ")
-        let fallback = headline.isEmpty ? "AI 세션 작업" : String(headline.prefix(72))
-        let title = jiraKey.map { "\($0) \(folder)" } ?? "\(folder) — \(fallback)"
-        let summaryDetails = report.transcriptPath == nil ? "" : "\n\n\(report.summary)"
+        let headline = proposedTitle.split(whereSeparator: \Character.isWhitespace).joined(separator: " ")
+        guard !headline.isEmpty else { return nil }
+        let title = jiraKey.map { "\($0) \(headline)" } ?? String(headline.prefix(80))
         let details = jiraKey == nil ? """
-        AI 세션 점검에서 자동 생성됨.\(summaryDetails)
+        AI 세션 점검에서 작업 목적을 확인해 자동 생성됨.
+
+        - 최초 요청: \(report.objective ?? "")
+        - 최근 진행: \(report.summary)
 
         - 도구: \(report.provider.rawValue)
         - 작업 폴더: `\(report.cwd)`
@@ -105,6 +107,7 @@ struct AiProcess: Equatable {
 struct AiTranscriptFacts: Equatable {
     let id: String
     let activity: AiSessionActivity
+    let objective: String?
     let summary: String
     let aiMilliseconds: Double
     let waitingMilliseconds: Double
@@ -188,6 +191,7 @@ enum AiSessionScanner {
                 cwd: process.cwd ?? "경로 확인 불가",
                 sessionKey: sessionKey,
                 transcriptPath: facts == nil ? nil : transcript?.path,
+                objective: facts?.objective,
                 summary: facts?.summary ?? missingTranscriptMessage(for: process.provider),
                 aiMilliseconds: facts?.aiMilliseconds ?? 0,
                 waitingMilliseconds: facts?.waitingMilliseconds ?? 0,
@@ -256,6 +260,7 @@ enum AiSessionScanner {
         var id = "claude"
         var events: [(date: Date, kind: String, phase: String?, text: String?)] = []
         var isSubagent = false
+        var objective: String?
 
         for object in records {
             if let sessionId = object["sessionId"] as? String { id = sessionId }
@@ -263,8 +268,9 @@ enum AiSessionScanner {
             guard let date = isoDate(object["timestamp"]), let type = object["type"] as? String else { continue }
             let message = object["message"] as? [String: Any]
             let content = message?["content"]
-            if type == "user", content is String {
-                events.append((date, "human", nil, content as? String))
+            if type == "user", let text = userRequestText(content) {
+                if objective == nil { objective = text }
+                events.append((date, "human", nil, text))
             } else if type == "assistant", let blocks = content as? [[String: Any]] {
                 var phase: String?
                 var text: String?
@@ -325,6 +331,7 @@ enum AiSessionScanner {
         return AiTranscriptFacts(
             id: id,
             activity: active ? .running : .waitingForHuman,
+            objective: objective,
             summary: lastSummary,
             aiMilliseconds: aiMs,
             waitingMilliseconds: waitMs,
@@ -347,6 +354,7 @@ enum AiSessionScanner {
         var lastCompletedAt: Date?
         var lastActivity: Date?
         var summary = "진행 내용을 요약할 응답이 아직 없습니다."
+        var objective: String?
 
         for object in records {
             if let timestamp = isoDate(object["timestamp"]) { lastActivity = timestamp }
@@ -375,6 +383,11 @@ enum AiSessionScanner {
                 if itemType == "function_call" || itemType == "custom_tool_call" {
                     phasesInTurn.append(classify(tool: payload["name"] as? String, input: payload["arguments"] ?? payload["input"]))
                 } else if itemType == "message",
+                          payload["role"] as? String == "user",
+                          objective == nil,
+                          let value = userRequestText(payload["content"]) {
+                    objective = value
+                } else if itemType == "message",
                           payload["role"] as? String == "assistant",
                           let content = payload["content"] as? [[String: Any]] {
                     let text = content.compactMap { $0["text"] as? String }.joined(separator: " ")
@@ -392,6 +405,7 @@ enum AiSessionScanner {
         return AiTranscriptFacts(
             id: id,
             activity: activeStartedAt == nil ? .waitingForHuman : .running,
+            objective: objective,
             summary: summary,
             aiMilliseconds: totalMs,
             waitingMilliseconds: waitMs,
@@ -588,6 +602,39 @@ enum AiSessionScanner {
         let oneLine = value?.split(whereSeparator: \Character.isWhitespace).joined(separator: " ") ?? ""
         guard !oneLine.isEmpty else { return nil }
         return String(oneLine.prefix(220))
+    }
+
+    private static func userRequestText(_ content: Any?) -> String? {
+        let values: [String]
+        if let content = content as? String {
+            values = [content]
+        } else if let blocks = content as? [[String: Any]] {
+            values = blocks.compactMap { block in
+                guard ["text", "input_text"].contains(block["type"] as? String) else { return nil }
+                return block["text"] as? String
+            }
+        } else {
+            return nil
+        }
+
+        for value in values {
+            let oneLine = value.split(whereSeparator: \Character.isWhitespace).joined(separator: " ")
+            guard !oneLine.isEmpty, !isInjectedContext(oneLine) else { continue }
+            return String(oneLine.prefix(1_200))
+        }
+        return nil
+    }
+
+    private static func isInjectedContext(_ value: String) -> Bool {
+        let prefixes = [
+            "# AGENTS.md instructions",
+            "<environment_context>",
+            "<permissions instructions>",
+            "<collaboration_mode>",
+            "<skills_instructions>",
+            "<apps_instructions>",
+        ]
+        return prefixes.contains { value.hasPrefix($0) }
     }
 
     private static func missingTranscriptMessage(for provider: AiSessionProvider) -> String {

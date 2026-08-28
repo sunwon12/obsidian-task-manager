@@ -40,6 +40,7 @@ final class AiSessionsTests: XCTestCase {
         XCTAssertEqual(facts.activity, .waitingForHuman)
         XCTAssertEqual(facts.aiMilliseconds, 180_000, accuracy: 1)
         XCTAssertEqual(facts.waitingMilliseconds, 420_000, accuracy: 1)
+        XCTAssertEqual(facts.objective, "구현해줘")
         XCTAssertEqual(facts.summary, "테스트도 통과했습니다.")
         XCTAssertTrue(facts.phases.contains { $0.name == "구현" })
     }
@@ -47,6 +48,7 @@ final class AiSessionsTests: XCTestCase {
     func testCodexUsesReportedTurnDurationAndLeavesOpenTurnRunning() throws {
         let data = try jsonl([
             ["timestamp": "2026-08-28T00:00:00.000Z", "type": "session_meta", "payload": ["id": "c1", "source": "cli"]],
+            ["timestamp": "2026-08-28T00:00:00.000Z", "type": "response_item", "payload": ["type": "message", "role": "user", "content": [["type": "input_text", "text": "캐시 무효화 버그 고쳐줘"]]]],
             ["timestamp": "2026-08-28T00:00:00.000Z", "type": "event_msg", "payload": ["type": "task_started", "started_at": 1_787_875_200]],
             ["timestamp": "2026-08-28T00:01:00.000Z", "type": "response_item", "payload": ["type": "function_call", "name": "apply_patch", "arguments": "{}"]],
             ["timestamp": "2026-08-28T00:02:00.000Z", "type": "event_msg", "payload": ["type": "task_complete", "completed_at": 1_787_875_320, "duration_ms": 120_000, "last_agent_message": "1차 구현 완료"]],
@@ -60,6 +62,7 @@ final class AiSessionsTests: XCTestCase {
         XCTAssertEqual(facts.activity, .running)
         XCTAssertEqual(facts.aiMilliseconds, 180_000, accuracy: 1)
         XCTAssertEqual(facts.waitingMilliseconds, 60_000, accuracy: 1)
+        XCTAssertEqual(facts.objective, "캐시 무효화 버그 고쳐줘")
         XCTAssertTrue(facts.phases.contains { $0.name == "구현" })
         XCTAssertTrue(facts.phases.contains { $0.name == "테스트" })
     }
@@ -129,6 +132,7 @@ final class AiSessionsTests: XCTestCase {
             cwd: "/work/29cm-community-BDCC-1263-add-admin-invitation-apis",
             sessionKey: "codex:session-1263",
             transcriptPath: "/tmp/session.jsonl",
+            objective: "초대장 API 설계 내용을 ADR로 남겨줘",
             summary: "Step 1 승인 내용을 ADR로 남겼습니다.",
             aiMilliseconds: 60_000,
             waitingMilliseconds: 120_000,
@@ -139,7 +143,7 @@ final class AiSessionsTests: XCTestCase {
             lastActivity: nil
         )
 
-        let draft = try XCTUnwrap(AiSessionTaskDraft.make(from: report))
+        let draft = try XCTUnwrap(AiSessionTaskDraft.make(from: report, title: "초대장 API 설계 결정 기록"))
 
         XCTAssertEqual(draft.jiraKey, "BDCC-1263")
         XCTAssertTrue(draft.title.hasPrefix("BDCC-1263 "))
@@ -156,13 +160,13 @@ final class AiSessionsTests: XCTestCase {
             taskId: nil
         )
 
-        let draft = try XCTUnwrap(AiSessionTaskDraft.make(from: report))
+        let draft = try XCTUnwrap(AiSessionTaskDraft.make(from: report, title: "알림 전환 테스트"))
 
         XCTAssertEqual(draft.status, .doing)
         XCTAssertEqual(draft.currentStep, 1)
     }
 
-    func testAutoTaskDraftCanCaptureProtectedClaudeSessionByCwd() throws {
+    func testAutoTaskDraftDoesNotCreateTaskWithoutReadableTranscript() throws {
         let report = AiSessionReport(
             id: "Claude-100",
             provider: .claude,
@@ -173,6 +177,7 @@ final class AiSessionsTests: XCTestCase {
             cwd: "/work/project",
             sessionKey: "claude:cwd:/work/project",
             transcriptPath: nil,
+            objective: nil,
             summary: "Claude 로그 폴더가 아직 연결되지 않았습니다.",
             aiMilliseconds: 0,
             waitingMilliseconds: 0,
@@ -183,11 +188,20 @@ final class AiSessionsTests: XCTestCase {
             lastActivity: nil
         )
 
-        let draft = try XCTUnwrap(AiSessionTaskDraft.make(from: report))
+        XCTAssertNil(AiSessionTaskDraft.make(from: report, title: "임시 작업"))
+        XCTAssertNil(AiSessionTaskCandidate.make(from: report))
+    }
 
-        XCTAssertEqual(draft.title, "project — Claude 세션 작업")
-        XCTAssertEqual(draft.sessionKey, "claude:cwd:/work/project")
-        XCTAssertEqual(draft.status, .todo, "실행 여부를 확정할 수 없으면 TODO로 둔다")
+    func testTaskPlannerParsesMeaningfulAndDisposableSessions() throws {
+        let stdout = """
+        {"result":"{\\"items\\":[{\\"sessionKey\\":\\"codex:one\\",\\"shouldCreate\\":true,\\"title\\":\\"캐시 무효화 버그 수정\\"},{\\"sessionKey\\":\\"claude:empty\\",\\"shouldCreate\\":false,\\"title\\":null}]}"}
+        """
+
+        let decisions = try AiSessionTaskPlanner.parse(stdout)
+
+        XCTAssertEqual(decisions["codex:one"]?.title, "캐시 무효화 버그 수정")
+        XCTAssertEqual(decisions["codex:one"]?.shouldCreate, true)
+        XCTAssertEqual(decisions["claude:empty"]?.shouldCreate, false)
     }
 
     func testWaitingTrackerSuppressesBaselineAndNotifiesOnlyNewCompletion() {
@@ -329,6 +343,7 @@ final class AiSessionsTests: XCTestCase {
             cwd: "/work/notification-test",
             sessionKey: "codex:notification-test",
             transcriptPath: "/tmp/notification-test.jsonl",
+            objective: "알림 상태 전환을 검증해줘",
             summary: summary,
             aiMilliseconds: 10_000,
             waitingMilliseconds: 0,

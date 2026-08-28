@@ -2,6 +2,11 @@ import AppKit
 import Combine
 import Foundation
 
+private struct AiSessionTaskDecisionCacheEntry {
+    let fingerprint: String
+    let decision: AiSessionTaskDecision
+}
+
 @MainActor
 final class RatkoStore: ObservableObject {
     @Published private(set) var tasks: [TaskCard] = []
@@ -26,6 +31,7 @@ final class RatkoStore: ObservableObject {
     private var tickTimer: Timer?
     private var aiFeedbackModifiedAt: Date?
     private var aiSessionWaitingTracker = AiSessionWaitingTracker()
+    private var aiSessionTaskDecisionCache: [String: AiSessionTaskDecisionCacheEntry] = [:]
     private var aiSessionLogMonitor: AiSessionLogMonitor?
     private var aiSessionMonitorWorkItem: DispatchWorkItem?
     private var aiSessionMonitorScanRunning = false
@@ -251,7 +257,34 @@ final class RatkoStore: ObservableObject {
             switch result {
             case .success(let reports):
                 if autoCreateTasks {
-                    let creation = self.createMissingAiSessionTasks(from: reports)
+                    let candidates = reports.compactMap(AiSessionTaskCandidate.make)
+                    let unplanned = candidates.filter { candidate in
+                        self.aiSessionTaskDecisionCache[candidate.sessionKey]?.fingerprint
+                            != Self.aiSessionTaskFingerprint(candidate)
+                    }
+                    if !unplanned.isEmpty, let configuration = self.configuration {
+                        switch await AiSessionTaskPlanner.plan(
+                            configuration: configuration,
+                            candidates: unplanned
+                        ) {
+                        case .success(let planned):
+                            for candidate in unplanned {
+                                guard let decision = planned[candidate.sessionKey] else { continue }
+                                self.aiSessionTaskDecisionCache[candidate.sessionKey] = AiSessionTaskDecisionCacheEntry(
+                                    fingerprint: Self.aiSessionTaskFingerprint(candidate),
+                                    decision: decision
+                                )
+                            }
+                        case .failure(let error):
+                            self.lastError = "AI 세션을 태스크로 판정하지 못했습니다. \(error.message)"
+                        }
+                    }
+                    let decisions = Dictionary(uniqueKeysWithValues: candidates.compactMap { candidate in
+                        self.aiSessionTaskDecisionCache[candidate.sessionKey].map {
+                            (candidate.sessionKey, $0.decision)
+                        }
+                    })
+                    let creation = self.createMissingAiSessionTasks(from: reports, decisions: decisions)
                     if let error = creation.error { self.lastError = error }
                     if creation.created > 0 {
                         self.aiSessionCreatedTaskCount = creation.created
@@ -272,14 +305,23 @@ final class RatkoStore: ObservableObject {
     }
 
     private func createMissingAiSessionTasks(
-        from reports: [AiSessionReport]
+        from reports: [AiSessionReport],
+        decisions: [String: AiSessionTaskDecision]
     ) -> (created: Int, error: String?) {
         guard let repository else { return (0, nil) }
         var identities = Set<String>()
         var created = 0
         var errors: [String] = []
 
-        for draft in reports.compactMap(AiSessionTaskDraft.make) {
+        let drafts = reports.compactMap { report -> AiSessionTaskDraft? in
+            guard let sessionKey = report.sessionKey,
+                  let decision = decisions[sessionKey],
+                  decision.shouldCreate,
+                  let title = decision.title
+            else { return nil }
+            return AiSessionTaskDraft.make(from: report, title: title)
+        }
+        for draft in drafts {
             let identity = draft.jiraKey?.lowercased() ?? draft.sessionKey
             guard identities.insert(identity).inserted else { continue }
             let alreadyExists = tasks.contains { task in
@@ -305,6 +347,10 @@ final class RatkoStore: ObservableObject {
         }
         let message = errors.isEmpty ? nil : "AI 세션 태스크를 일부 생성하지 못했습니다. \(errors.joined(separator: " / "))"
         return (created, message)
+    }
+
+    private static func aiSessionTaskFingerprint(_ candidate: AiSessionTaskCandidate) -> String {
+        "\(candidate.objective)\n\(candidate.latestSummary)"
     }
 
     func connectClaudeLogs() {
