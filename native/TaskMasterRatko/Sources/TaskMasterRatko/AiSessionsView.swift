@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 enum RatkoAiSessionsWindowPresentation {
     static let identifier = NSUserInterfaceItemIdentifier("ratko-ai-sessions")
+    private static var appKitWindow: NSWindow?
 
     static func open(using openWindow: OpenWindowAction) {
         openWindow(id: "ratko-ai-sessions")
@@ -11,6 +12,27 @@ enum RatkoAiSessionsWindowPresentation {
             NSApplication.shared.activate(ignoringOtherApps: true)
             NSApplication.shared.windows.first { $0.identifier == identifier }?.makeKeyAndOrderFront(nil)
         }
+    }
+
+    static func open(store: RatkoStore) {
+        if let window = NSApplication.shared.windows.first(where: { $0.identifier == identifier }) {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 700, height: 720),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "AI 세션 점검"
+        window.identifier = identifier
+        window.contentView = NSHostingView(rootView: AiSessionsView(store: store))
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        appKitWindow = window
     }
 
     static func register(_ window: NSWindow) {
@@ -64,6 +86,7 @@ struct AiSessionsView: View {
         .frame(minWidth: 620, minHeight: 560)
         .background(RatkoAiSessionsWindowResolver())
         .onAppear {
+            store.refreshAiSessionNotificationPermission()
             if store.aiSessionScanState == .idle { store.scanAiSessions() }
         }
     }
@@ -75,10 +98,11 @@ struct AiSessionsView: View {
                 .foregroundStyle(.blue)
             VStack(alignment: .leading, spacing: 2) {
                 Text("AI 세션 점검").font(.headline)
-                Text("지금 요청한 순간에만 로컬 Claude·Codex 로그를 읽습니다.")
+                Text("직접 점검하거나 로그 변경이 있을 때만 로컬 Claude·Codex 기록을 읽습니다.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
+            notificationPermissionStatus
             if store.aiSessionScanState == .running {
                 ProgressView().controlSize(.small)
             }
@@ -90,6 +114,20 @@ struct AiSessionsView: View {
             .disabled(store.aiSessionScanState == .running)
         }
         .padding(16)
+    }
+
+    @ViewBuilder
+    private var notificationPermissionStatus: some View {
+        switch store.aiSessionNotificationPermission {
+        case .enabled:
+            Label("내 차례 알림", systemImage: "bell.fill")
+                .font(.caption).foregroundStyle(.green)
+        case .denied:
+            Button("알림 켜기") { store.openNotificationSettings() }
+                .font(.caption)
+        case .unknown:
+            EmptyView()
+        }
     }
 
     @ViewBuilder

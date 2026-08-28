@@ -426,6 +426,7 @@ struct RatkoTaskAiWindowResolver: NSViewRepresentable {
 
 @main
 struct TaskMasterRatkoApp: App {
+    @NSApplicationDelegateAdaptor(RatkoApplicationDelegate.self) private var appDelegate
     @StateObject private var store: RatkoStore
 
     init() {
@@ -438,6 +439,11 @@ struct TaskMasterRatkoApp: App {
             model = RatkoStore(error: error)
         }
         _store = StateObject(wrappedValue: model)
+        appDelegate.onOpenAiSessions = { [weak model] in
+            guard let model else { return }
+            model.scanAiSessions()
+            RatkoAiSessionsWindowPresentation.open(store: model)
+        }
         if ProcessInfo.processInfo.environment["RATKO_UI_TEST"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 RatkoUiTestWindow.open(store: model)

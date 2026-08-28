@@ -16,6 +16,7 @@ final class RatkoStore: ObservableObject {
     @Published private(set) var aiSessionScanState: AiSessionScanState = .idle
     @Published private(set) var aiSessionLastScannedAt: Date?
     @Published private(set) var aiSessionCreatedTaskCount = 0
+    @Published private(set) var aiSessionNotificationPermission: AiSessionNotificationPermission = .unknown
     @Published var lastError: String?
 
     let configuration: RatkoConfiguration?
@@ -23,6 +24,11 @@ final class RatkoStore: ObservableObject {
     private var pollTimer: Timer?
     private var tickTimer: Timer?
     private var aiFeedbackModifiedAt: Date?
+    private var aiSessionWaitingTracker = AiSessionWaitingTracker()
+    private var aiSessionLogMonitor: AiSessionLogMonitor?
+    private var aiSessionMonitorWorkItem: DispatchWorkItem?
+    private var aiSessionMonitorScanRunning = false
+    private var aiSessionMonitorScanPending = false
 
     init(configuration: RatkoConfiguration) {
         self.configuration = configuration
@@ -38,6 +44,7 @@ final class RatkoStore: ObservableObject {
         tickTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.now = Date() }
         }
+        DispatchQueue.main.async { [weak self] in self?.configureAiSessionNotifications() }
     }
 
     init(error: Error) {
@@ -49,6 +56,7 @@ final class RatkoStore: ObservableObject {
     deinit {
         pollTimer?.invalidate()
         tickTimer?.invalidate()
+        aiSessionMonitorWorkItem?.cancel()
     }
 
     var focusTasks: [(TaskCard, TimerRecord)] {
@@ -233,6 +241,7 @@ final class RatkoStore: ObservableObject {
                     }
                 }
                 self.aiSessionReports = reports
+                _ = self.aiSessionWaitingTracker.ingest(reports)
                 self.aiSessionLastScannedAt = Date()
                 self.aiSessionScanState = .loaded
             case .failure(let error):
@@ -284,6 +293,7 @@ final class RatkoStore: ObservableObject {
                 .map(\.cwd)
             RatkoUiTestDiagnostics.log("claude-connect cwds=\(cwds)")
             try ClaudeLogAccess.request(cwds: Array(Set(cwds)).sorted())
+            restartAiSessionLogMonitor()
             lastError = nil
             scanAiSessions()
         } catch ClaudeLogAccessError.cancelled {
@@ -292,6 +302,71 @@ final class RatkoStore: ObservableObject {
         } catch {
             RatkoUiTestDiagnostics.log("claude-connect error=\(error.localizedDescription)")
             lastError = error.localizedDescription
+        }
+    }
+
+    func refreshAiSessionNotificationPermission() {
+        AiSessionNotifications.refreshPermission { [weak self] permission in
+            DispatchQueue.main.async { self?.aiSessionNotificationPermission = permission }
+        }
+    }
+
+    func openNotificationSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    private func configureAiSessionNotifications() {
+        AiSessionNotifications.requestPermission { [weak self] permission in
+            DispatchQueue.main.async { self?.aiSessionNotificationPermission = permission }
+        }
+        aiSessionLogMonitor = AiSessionLogMonitor { [weak self] in
+            self?.scheduleAiSessionNotificationScan()
+        }
+        restartAiSessionLogMonitor()
+        scanAiSessionsForNotifications()
+    }
+
+    private func restartAiSessionLogMonitor() {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let codex = home.appendingPathComponent(".codex/sessions", isDirectory: true).path
+        let claude = ClaudeLogAccess.authorizedProjectURLs.values.map(\.path)
+        aiSessionLogMonitor?.restart(paths: [codex] + claude)
+    }
+
+    private func scheduleAiSessionNotificationScan() {
+        aiSessionMonitorWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in self?.scanAiSessionsForNotifications() }
+        aiSessionMonitorWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: item)
+    }
+
+    private func scanAiSessionsForNotifications() {
+        guard !aiSessionMonitorScanRunning else {
+            aiSessionMonitorScanPending = true
+            return
+        }
+        aiSessionMonitorScanRunning = true
+        let taskSnapshot = tasks
+        let timerSnapshot = timers
+        let authorizedClaudeProjects = ClaudeLogAccess.authorizedProjectURLs
+        Task { [weak self] in
+            let result = await AiSessionScanner.scan(
+                tasks: taskSnapshot,
+                timers: timerSnapshot,
+                authorizedClaudeProjects: authorizedClaudeProjects
+            )
+            guard let self else { return }
+            if case .success(let reports) = result {
+                for report in self.aiSessionWaitingTracker.ingest(reports) {
+                    AiSessionNotifications.deliverWaitingNotification(for: report)
+                }
+            }
+            self.aiSessionMonitorScanRunning = false
+            if self.aiSessionMonitorScanPending {
+                self.aiSessionMonitorScanPending = false
+                self.scheduleAiSessionNotificationScan()
+            }
         }
     }
 

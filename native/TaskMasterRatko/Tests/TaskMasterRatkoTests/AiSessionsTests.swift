@@ -175,6 +175,42 @@ final class AiSessionsTests: XCTestCase {
         XCTAssertEqual(draft.sessionKey, "claude:cwd:/work/project")
     }
 
+    func testWaitingTrackerSuppressesBaselineAndNotifiesOnlyNewCompletion() {
+        var tracker = AiSessionWaitingTracker()
+        let firstCompletion = Date(timeIntervalSince1970: 100)
+        let secondCompletion = Date(timeIntervalSince1970: 200)
+
+        XCTAssertTrue(tracker.ingest([notificationReport(activity: .waitingForHuman, at: firstCompletion)]).isEmpty)
+        XCTAssertTrue(tracker.ingest([notificationReport(activity: .waitingForHuman, at: firstCompletion)]).isEmpty)
+        XCTAssertEqual(
+            tracker.ingest([notificationReport(activity: .waitingForHuman, at: secondCompletion)]).map(\.sessionKey),
+            ["codex:notification-test"]
+        )
+    }
+
+    func testWaitingTrackerNotifiesWhenRunningSessionBecomesWaiting() {
+        var tracker = AiSessionWaitingTracker()
+        _ = tracker.ingest([notificationReport(activity: .running, at: Date(timeIntervalSince1970: 100))])
+
+        let transitioned = tracker.ingest([
+            notificationReport(activity: .waitingForHuman, at: Date(timeIntervalSince1970: 110)),
+        ])
+
+        XCTAssertEqual(transitioned.count, 1)
+    }
+
+    func testWaitingTrackerDoesNotRepeatAfterTemporarySessionAbsence() {
+        var tracker = AiSessionWaitingTracker()
+        let completion = Date(timeIntervalSince1970: 100)
+        _ = tracker.ingest([notificationReport(activity: .waitingForHuman, at: completion)])
+        _ = tracker.ingest([])
+
+        XCTAssertTrue(tracker.ingest([
+            notificationReport(activity: .waitingForHuman, at: completion),
+            notificationReport(activity: .waitingForHuman, at: completion),
+        ]).isEmpty)
+    }
+
     private func task(id: String, title: String) -> TaskCard {
         TaskCard(
             id: id,
@@ -188,6 +224,28 @@ final class AiSessionsTests: XCTestCase {
             due: nil,
             updatedAt: "",
             body: ""
+        )
+    }
+
+    private func notificationReport(activity: AiSessionActivity, at date: Date) -> AiSessionReport {
+        AiSessionReport(
+            id: "Codex-200",
+            provider: .codex,
+            kind: .interactive,
+            activity: activity,
+            pid: 200,
+            tty: "ttys002",
+            cwd: "/work/notification-test",
+            sessionKey: "codex:notification-test",
+            transcriptPath: "/tmp/notification-test.jsonl",
+            summary: "확인해 주세요.",
+            aiMilliseconds: 10_000,
+            waitingMilliseconds: 0,
+            phases: [],
+            taskId: "task_notification",
+            taskTitle: "알림 테스트",
+            humanMilliseconds: 0,
+            lastActivity: date
         )
     }
 

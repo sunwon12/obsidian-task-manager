@@ -29,6 +29,7 @@ mkdir -p "$CONTENTS_DIR/MacOS" "$CONTENTS_DIR/Resources" "$CONFIG_DIR" "${LAUNCH
 cp "$PROJECT_DIR/.build/release/TaskMasterRatko" "$CONTENTS_DIR/MacOS/TaskMasterRatko"
 cp "$SCRIPT_DIR/../src/assets/taskmaster-menubar-32.png" "$CONTENTS_DIR/Resources/taskmaster-menubar-32.png"
 cp "$SCRIPT_DIR/../src/assets/taskmaster-menubar-otter.png" "$CONTENTS_DIR/Resources/taskmaster-menubar-otter.png"
+cp "$SCRIPT_DIR/../src/assets/TaskMasterRatko.icns" "$CONTENTS_DIR/Resources/TaskMasterRatko.icns"
 
 cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -37,9 +38,11 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
   <key>CFBundleExecutable</key><string>TaskMasterRatko</string>
   <key>CFBundleIdentifier</key><string>com.taskmaster.ratko</string>
   <key>CFBundleName</key><string>TaskMaster Ratko</string>
+  <key>CFBundleIconFile</key><string>TaskMasterRatko.icns</string>
   <key>CFBundleShortVersionString</key><string>1.0.0</string>
+  <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
-  <key>NSAppDataUsageDescription</key><string>요청한 순간에만 로컬 Claude 대화 기록을 읽어 진행 상태와 작업 시간을 보여줍니다.</string>
+  <key>NSAppDataUsageDescription</key><string>직접 점검하거나 AI 로그가 바뀐 경우에만 로컬 Claude 기록을 읽어 진행 상태와 내 차례를 알려줍니다.</string>
   <key>LSUIElement</key><true/>
 </dict></plist>
 PLIST
