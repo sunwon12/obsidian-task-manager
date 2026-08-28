@@ -238,7 +238,7 @@ struct AiSessionsView: View {
                     .padding(.leading, 2)
             } else {
                 ForEach(reports) { report in
-                    AiSessionCard(report: report)
+                    AiSessionCard(store: store, report: report)
                 }
             }
         }
@@ -264,13 +264,30 @@ struct AiSessionsView: View {
 }
 
 private struct AiSessionCard: View {
+    @ObservedObject var store: RatkoStore
     let report: AiSessionReport
 
     private var folderName: String {
         URL(fileURLWithPath: report.cwd).lastPathComponent
     }
 
+    private var openState: AiSessionOrcaOpenState {
+        store.aiSessionOrcaOpenState(for: report)
+    }
+
     var body: some View {
+        Button {
+            store.openAiSessionInOrca(report)
+        } label: {
+            cardContent
+        }
+        .buttonStyle(.plain)
+        .disabled(openState == .opening)
+        .accessibilityLabel("\(folderName)의 \(report.provider.rawValue) 세션을 Orca에서 열기")
+        .help("해당 AI 세션이 실행 중인 Orca 터미널로 이동")
+    }
+
+    private var cardContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 7) {
                 Text(report.provider.rawValue).font(.caption).bold()
@@ -282,6 +299,7 @@ private struct AiSessionCard: View {
                 if report.taskId == nil {
                     Text("태스크 미연결").font(.caption2).foregroundStyle(.secondary)
                 }
+                orcaOpenIndicator
             }
 
             Text(report.summary)
@@ -317,10 +335,27 @@ private struct AiSessionCard: View {
                 Label(taskTitle, systemImage: "checklist")
                     .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }
+
+            if case .failure(let message) = openState {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption2).foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    @ViewBuilder
+    private var orcaOpenIndicator: some View {
+        switch openState {
+        case .opening:
+            ProgressView().controlSize(.small)
+        case .idle, .failure:
+            Label("Orca에서 열기", systemImage: "arrow.up.forward.app")
+                .font(.caption2).foregroundStyle(.blue)
+        }
     }
 
     private var providerColor: Color { report.provider == .claude ? .purple : .blue }
@@ -332,6 +367,12 @@ private struct AiSessionCard: View {
         }
         .font(.caption)
     }
+}
+
+enum AiSessionOrcaOpenState: Equatable {
+    case idle
+    case opening
+    case failure(String)
 }
 
 private func compactDuration(_ milliseconds: Double) -> String {

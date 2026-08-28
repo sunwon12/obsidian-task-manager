@@ -211,6 +211,77 @@ final class AiSessionsTests: XCTestCase {
         ]).isEmpty)
     }
 
+    func testOrcaTerminalMatcherUsesUniqueWorktree() {
+        let report = notificationReport(activity: .waitingForHuman, at: Date(timeIntervalSince1970: 100))
+
+        XCTAssertEqual(
+            OrcaTerminalMatcher.match(report: report, terminals: [orcaTerminal(handle: "term_unique")]),
+            .matched("term_unique")
+        )
+    }
+
+    func testOrcaTerminalMatcherPrefersExactSessionId() {
+        let report = notificationReport(activity: .waitingForHuman, at: Date(timeIntervalSince1970: 100))
+        let terminals = [
+            orcaTerminal(handle: "term_other", preview: "another session"),
+            orcaTerminal(handle: "term_exact", preview: "resume codex:notification-test"),
+        ]
+
+        XCTAssertEqual(
+            OrcaTerminalMatcher.match(report: report, terminals: terminals),
+            .matched("term_exact")
+        )
+    }
+
+    func testOrcaTerminalMatcherUsesSummaryThenActivityTime() {
+        let report = notificationReport(activity: .waitingForHuman, at: Date(timeIntervalSince1970: 100))
+        let summaryMatch = orcaTerminal(
+            handle: "term_summary",
+            preview: "확인해 주세요. 알림 테스트 결과입니다.",
+            lastOutputAt: 10_000
+        )
+        let timeMatch = orcaTerminal(handle: "term_time", lastOutputAt: 100_000)
+
+        XCTAssertEqual(
+            OrcaTerminalMatcher.match(report: report, terminals: [timeMatch, summaryMatch]),
+            .matched("term_summary")
+        )
+
+        let noSummaryReport = notificationReport(
+            activity: .waitingForHuman,
+            at: Date(timeIntervalSince1970: 200),
+            summary: "서로 겹치지 않는 문장"
+        )
+        XCTAssertEqual(
+            OrcaTerminalMatcher.match(
+                report: noSummaryReport,
+                terminals: [
+                    orcaTerminal(handle: "term_old", lastOutputAt: 100_000),
+                    orcaTerminal(handle: "term_recent", lastOutputAt: 200_000),
+                ]
+            ),
+            .matched("term_recent")
+        )
+    }
+
+    func testOrcaTerminalMatcherRefusesAmbiguousOrMissingTerminal() {
+        let report = notificationReport(activity: .waitingForHuman, at: Date(timeIntervalSince1970: 100))
+        let duplicate = orcaTerminal(handle: "term_one", lastOutputAt: 90_000)
+        let duplicateTwo = orcaTerminal(handle: "term_two", lastOutputAt: 90_000)
+
+        XCTAssertEqual(
+            OrcaTerminalMatcher.match(report: report, terminals: [duplicate, duplicateTwo]),
+            .ambiguous
+        )
+        XCTAssertEqual(
+            OrcaTerminalMatcher.match(
+                report: report,
+                terminals: [orcaTerminal(handle: "term_elsewhere", path: "/work/elsewhere")]
+            ),
+            .missing
+        )
+    }
+
     private func task(id: String, title: String) -> TaskCard {
         TaskCard(
             id: id,
@@ -227,7 +298,11 @@ final class AiSessionsTests: XCTestCase {
         )
     }
 
-    private func notificationReport(activity: AiSessionActivity, at date: Date) -> AiSessionReport {
+    private func notificationReport(
+        activity: AiSessionActivity,
+        at date: Date,
+        summary: String = "확인해 주세요."
+    ) -> AiSessionReport {
         AiSessionReport(
             id: "Codex-200",
             provider: .codex,
@@ -238,7 +313,7 @@ final class AiSessionsTests: XCTestCase {
             cwd: "/work/notification-test",
             sessionKey: "codex:notification-test",
             transcriptPath: "/tmp/notification-test.jsonl",
-            summary: "확인해 주세요.",
+            summary: summary,
             aiMilliseconds: 10_000,
             waitingMilliseconds: 0,
             phases: [],
@@ -246,6 +321,23 @@ final class AiSessionsTests: XCTestCase {
             taskTitle: "알림 테스트",
             humanMilliseconds: 0,
             lastActivity: date
+        )
+    }
+
+    private func orcaTerminal(
+        handle: String,
+        path: String = "/work/notification-test",
+        title: String = "terminal",
+        preview: String = "",
+        lastOutputAt: Double? = nil
+    ) -> OrcaTerminalRecord {
+        OrcaTerminalRecord(
+            handle: handle,
+            worktreePath: path,
+            title: title,
+            connected: true,
+            lastOutputAt: lastOutputAt,
+            preview: preview
         )
     }
 

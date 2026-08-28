@@ -17,6 +17,7 @@ final class RatkoStore: ObservableObject {
     @Published private(set) var aiSessionLastScannedAt: Date?
     @Published private(set) var aiSessionCreatedTaskCount = 0
     @Published private(set) var aiSessionNotificationPermission: AiSessionNotificationPermission = .unknown
+    @Published private(set) var aiSessionOrcaOpenStates: [String: AiSessionOrcaOpenState] = [:]
     @Published var lastError: String?
 
     let configuration: RatkoConfiguration?
@@ -209,6 +210,26 @@ final class RatkoStore: ObservableObject {
     func scanAiSessions() {
         aiSessionCreatedTaskCount = 0
         scanAiSessionsPass(autoCreateTasks: true)
+    }
+
+    func aiSessionOrcaOpenState(for report: AiSessionReport) -> AiSessionOrcaOpenState {
+        aiSessionOrcaOpenStates[report.sessionKey ?? report.id] ?? .idle
+    }
+
+    func openAiSessionInOrca(_ report: AiSessionReport) {
+        let identity = report.sessionKey ?? report.id
+        guard aiSessionOrcaOpenStates[identity] != .opening else { return }
+        aiSessionOrcaOpenStates[identity] = .opening
+        Task { [weak self] in
+            let result = await OrcaTerminalNavigator.open(report: report)
+            guard let self else { return }
+            switch result {
+            case .success:
+                self.aiSessionOrcaOpenStates.removeValue(forKey: identity)
+            case .failure(let message):
+                self.aiSessionOrcaOpenStates[identity] = .failure(message)
+            }
+        }
     }
 
     private func scanAiSessionsPass(autoCreateTasks: Bool) {
