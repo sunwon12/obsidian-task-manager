@@ -82,7 +82,7 @@ struct AiSessionTaskDraft: Equatable {
         """ : nil
         return AiSessionTaskDraft(
             title: title,
-            status: .todo,
+            status: report.activity == .running ? .doing : .todo,
             jiraKey: jiraKey,
             sessionKey: sessionKey,
             steps: ["[AI] 진행", "[인간] 검증"],

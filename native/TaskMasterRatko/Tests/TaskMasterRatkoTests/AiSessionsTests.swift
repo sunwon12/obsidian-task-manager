@@ -143,9 +143,23 @@ final class AiSessionsTests: XCTestCase {
 
         XCTAssertEqual(draft.jiraKey, "BDCC-1263")
         XCTAssertTrue(draft.title.hasPrefix("BDCC-1263 "))
+        XCTAssertEqual(draft.status, .todo)
         XCTAssertEqual(draft.steps, ["[AI] 진행", "[인간] 검증"])
         XCTAssertEqual(draft.currentStep, 2)
         XCTAssertNil(draft.bodyDetails, "Jira 동기화가 설명을 백필할 수 있게 비워 둔다")
+    }
+
+    func testAutoTaskDraftCreatesRunningSessionInDoing() throws {
+        let report = notificationReport(
+            activity: .running,
+            at: Date(timeIntervalSince1970: 100),
+            taskId: nil
+        )
+
+        let draft = try XCTUnwrap(AiSessionTaskDraft.make(from: report))
+
+        XCTAssertEqual(draft.status, .doing)
+        XCTAssertEqual(draft.currentStep, 1)
     }
 
     func testAutoTaskDraftCanCaptureProtectedClaudeSessionByCwd() throws {
@@ -173,6 +187,7 @@ final class AiSessionsTests: XCTestCase {
 
         XCTAssertEqual(draft.title, "project — Claude 세션 작업")
         XCTAssertEqual(draft.sessionKey, "claude:cwd:/work/project")
+        XCTAssertEqual(draft.status, .todo, "실행 여부를 확정할 수 없으면 TODO로 둔다")
     }
 
     func testWaitingTrackerSuppressesBaselineAndNotifiesOnlyNewCompletion() {
@@ -301,7 +316,8 @@ final class AiSessionsTests: XCTestCase {
     private func notificationReport(
         activity: AiSessionActivity,
         at date: Date,
-        summary: String = "확인해 주세요."
+        summary: String = "확인해 주세요.",
+        taskId: String? = "task_notification"
     ) -> AiSessionReport {
         AiSessionReport(
             id: "Codex-200",
@@ -317,8 +333,8 @@ final class AiSessionsTests: XCTestCase {
             aiMilliseconds: 10_000,
             waitingMilliseconds: 0,
             phases: [],
-            taskId: "task_notification",
-            taskTitle: "알림 테스트",
+            taskId: taskId,
+            taskTitle: taskId == nil ? nil : "알림 테스트",
             humanMilliseconds: 0,
             lastActivity: date
         )
