@@ -202,8 +202,16 @@ final class RatkoStore: ObservableObject {
         aiSessionScanState = .running
         let taskSnapshot = tasks
         let timerSnapshot = timers
+        let authorizedClaudeProjects = ClaudeLogAccess.authorizedProjectURLs
+        RatkoUiTestDiagnostics.log(
+            "claude-access main projects=\(authorizedClaudeProjects.count)"
+        )
         Task { [weak self] in
-            let result = await AiSessionScanner.scan(tasks: taskSnapshot, timers: timerSnapshot)
+            let result = await AiSessionScanner.scan(
+                tasks: taskSnapshot,
+                timers: timerSnapshot,
+                authorizedClaudeProjects: authorizedClaudeProjects
+            )
             guard let self else { return }
             switch result {
             case .success(let reports):
@@ -213,6 +221,24 @@ final class RatkoStore: ObservableObject {
             case .failure(let error):
                 self.aiSessionScanState = .error(error.localizedDescription)
             }
+        }
+    }
+
+    func connectClaudeLogs() {
+        do {
+            let cwds = interactiveAiSessionReports
+                .filter { $0.provider == .claude && $0.transcriptPath == nil }
+                .map(\.cwd)
+            RatkoUiTestDiagnostics.log("claude-connect cwds=\(cwds)")
+            try ClaudeLogAccess.request(cwds: Array(Set(cwds)).sorted())
+            lastError = nil
+            scanAiSessions()
+        } catch ClaudeLogAccessError.cancelled {
+            RatkoUiTestDiagnostics.log("claude-connect cancelled")
+            return
+        } catch {
+            RatkoUiTestDiagnostics.log("claude-connect error=\(error.localizedDescription)")
+            lastError = error.localizedDescription
         }
     }
 

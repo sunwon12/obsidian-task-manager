@@ -51,6 +51,10 @@ struct AiSessionsView: View {
         store.interactiveAiSessionReports.filter { $0.activity != .running }
     }
 
+    private var needsClaudeLogAccess: Bool {
+        store.interactiveAiSessionReports.contains { $0.provider == .claude && $0.transcriptPath == nil }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -118,6 +122,7 @@ struct AiSessionsView: View {
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
+                    if needsClaudeLogAccess { claudeLogAccessPrompt }
                     scanSummary
                     sessionSection(title: "AI가 진행 중", icon: "bolt.fill", color: .blue, reports: running)
                     sessionSection(title: "내 응답·검증 대기", icon: "person.fill", color: .orange, reports: waiting)
@@ -127,6 +132,24 @@ struct AiSessionsView: View {
                 .padding(16)
             }
         }
+    }
+
+    private var claudeLogAccessPrompt: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "folder.badge.questionmark")
+                .font(.title2)
+                .foregroundStyle(.purple)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Claude 대화 기록을 연결해 주세요").font(.subheadline).bold()
+                Text("현재 열린 Claude 프로젝트의 기록 폴더를 한 번씩 연결하면, 이후에는 요청할 때만 읽습니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("현재 폴더 연결") { store.connectClaudeLogs() }
+                .buttonStyle(.borderedProminent)
+        }
+        .padding(12)
+        .background(.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
     }
 
     private var scanSummary: some View {

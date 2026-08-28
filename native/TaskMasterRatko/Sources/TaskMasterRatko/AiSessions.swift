@@ -71,10 +71,23 @@ struct AiTranscriptFacts: Equatable {
 }
 
 enum AiSessionScanner {
-    static func scan(tasks: [TaskCard], timers: [TimerRecord], now: Date = Date()) async -> Result<[AiSessionReport], Error> {
+    static func scan(
+        tasks: [TaskCard],
+        timers: [TimerRecord],
+        now: Date = Date(),
+        authorizedClaudeProjects: [String: URL] = [:]
+    ) async -> Result<[AiSessionReport], Error> {
         await Task.detached(priority: .utility) {
             do {
-                return .success(try scanSynchronously(tasks: tasks, timers: timers, now: now))
+                RatkoUiTestDiagnostics.log(
+                    "claude-access worker projects=\(authorizedClaudeProjects.count)"
+                )
+                return .success(try scanSynchronously(
+                    tasks: tasks,
+                    timers: timers,
+                    now: now,
+                    authorizedClaudeProjects: authorizedClaudeProjects
+                ))
             } catch {
                 return .failure(error)
             }
@@ -85,7 +98,8 @@ enum AiSessionScanner {
         tasks: [TaskCard],
         timers: [TimerRecord],
         now: Date = Date(),
-        homeURL: URL = FileManager.default.homeDirectoryForCurrentUser
+        homeURL: URL = FileManager.default.homeDirectoryForCurrentUser,
+        authorizedClaudeProjects: [String: URL] = [:]
     ) throws -> [AiSessionReport] {
         let output = try run("/bin/ps", arguments: ["ax", "-o", "pid=,ppid=,tty=,command="])
         var processes = parseProcesses(output)
@@ -95,7 +109,11 @@ enum AiSessionScanner {
 
         let unique = deduplicated(processes)
         return unique.map { process in
-            let transcript = locateTranscript(for: process, homeURL: homeURL)
+            let transcript = locateTranscript(
+                for: process,
+                homeURL: homeURL,
+                authorizedClaudeProjects: authorizedClaudeProjects
+            )
             let facts = transcript.flatMap { parseTranscript(at: $0, provider: process.provider, now: now) }
             RatkoUiTestDiagnostics.log(
                 "ai-session pid=\(process.pid) provider=\(process.provider.rawValue) transcript=\(transcript?.lastPathComponent ?? "none") parsed=\(facts != nil)"
@@ -351,7 +369,11 @@ enum AiSessionScanner {
         }
     }
 
-    private static func locateTranscript(for process: AiProcess, homeURL: URL) -> URL? {
+    private static func locateTranscript(
+        for process: AiProcess,
+        homeURL: URL,
+        authorizedClaudeProjects: [String: URL]
+    ) -> URL? {
         guard let cwd = process.cwd else { return nil }
         switch process.provider {
         case .codex:
@@ -366,7 +388,14 @@ enum AiSessionScanner {
                 return (url, modificationDate(url))
             }.max(by: { $0.1 < $1.1 })?.0
         case .claude:
-            let projectDirectory = claudeProjectDirectory(cwd: cwd, homeURL: homeURL)
+            let projectDirectory = claudeProjectDirectory(
+                cwd: cwd,
+                homeURL: homeURL,
+                authorizedClaudeProjects: authorizedClaudeProjects
+            )
+            RatkoUiTestDiagnostics.log(
+                "claude-project cwd=\(cwd) path=\(projectDirectory.path) exists=\(FileManager.default.fileExists(atPath: projectDirectory.path))"
+            )
             if let resumeId = capture(#"--resume\s+([0-9a-f-]+)"#, in: process.command) {
                 let direct = projectDirectory.appendingPathComponent("\(resumeId).jsonl")
                 if pathExists(direct.path) { return direct }
@@ -415,9 +444,15 @@ enum AiSessionScanner {
         }
     }
 
-    private static func claudeProjectDirectory(cwd: String, homeURL: URL) -> URL {
+    private static func claudeProjectDirectory(
+        cwd: String,
+        homeURL: URL,
+        authorizedClaudeProjects: [String: URL]
+    ) -> URL {
+        if let authorized = authorizedClaudeProjects[cwd] { return authorized }
         let encoded = cwd.replacingOccurrences(of: "/", with: "-")
-        return homeURL.appendingPathComponent(".claude/projects/\(encoded)", isDirectory: true)
+        let root = homeURL.appendingPathComponent(".claude/projects", isDirectory: true)
+        return root.appendingPathComponent(encoded, isDirectory: true)
     }
 
     private static func firstJsonObject(at url: URL) -> [String: Any]? {
@@ -483,7 +518,7 @@ enum AiSessionScanner {
     private static func missingTranscriptMessage(for provider: AiSessionProvider) -> String {
         switch provider {
         case .claude:
-            return "Claude 로그를 읽지 못했습니다. macOS 전체 디스크 접근 권한에서 TaskMasterRatko를 허용하면 진행·시간을 함께 표시합니다."
+            return "Claude 로그 폴더가 아직 연결되지 않았습니다. 위의 현재 폴더 연결을 누르면 진행·시간을 함께 표시합니다."
         case .codex:
             return "현재 프로세스에 연결된 Codex 대화 로그를 찾지 못했습니다."
         }

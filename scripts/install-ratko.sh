@@ -39,6 +39,7 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
   <key>CFBundleName</key><string>TaskMaster Ratko</string>
   <key>CFBundleShortVersionString</key><string>1.0.0</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
+  <key>NSAppDataUsageDescription</key><string>요청한 순간에만 로컬 Claude 대화 기록을 읽어 진행 상태와 작업 시간을 보여줍니다.</string>
   <key>LSUIElement</key><true/>
 </dict></plist>
 PLIST
