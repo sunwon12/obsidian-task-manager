@@ -82,6 +82,10 @@ final class DailyProductivityTests: XCTestCase {
             accuracy: 1
         )
         XCTAssertTrue(FileManager.default.fileExists(atPath: repository.summaryURL.path))
+        let summary = try String(contentsOf: repository.summaryURL, encoding: .utf8)
+        XCTAssertTrue(summary.hasPrefix("---\ntitle:"))
+        XCTAssertTrue(summary.contains("\ntype: 생산성\n"))
+        XCTAssertTrue(summary.contains("\nsummary:"))
     }
 
     func testClaudeSdkCliIsSeparatedAsAutomation() throws {

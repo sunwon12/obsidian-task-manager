@@ -77,7 +77,7 @@ struct DailyProductivityMetric: Codable, Equatable {
 }
 
 struct DailyProductivityArchive: Codable, Equatable {
-    var version = 4
+    var version = 5
     var days: [DailyProductivityMetric] = []
 }
 
@@ -203,7 +203,20 @@ struct DailyProductivityRepository {
     }
 
     private static func markdown(_ archive: DailyProductivityArchive) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        let created = formatter.string(from: archive.days.map(\.generatedAt).min() ?? Date())
         var lines = [
+            "---",
+            "title: \"일일 인간·AI 작업시간\"",
+            "type: 생산성",
+            "tags: [\"taskmaster\", \"생산성\", \"시간측정\"]",
+            "created: \(created)",
+            "summary: \"랏코 타이머의 인간 구간과 Codex·Claude transcript에서 확정한 날짜별 인간·AI 작업시간이다.\"",
+            "---",
+            "",
             "# 일일 인간·AI 작업시간",
             "",
             "> 랏코가 매일 전날의 로컬 타이머와 Codex·Claude transcript를 다시 읽어 확정한 집계. 응답 대기는 생산성 시간에서 제외한다.",
