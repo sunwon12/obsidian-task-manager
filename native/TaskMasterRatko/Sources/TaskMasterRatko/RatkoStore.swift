@@ -23,10 +23,13 @@ final class RatkoStore: ObservableObject {
     @Published private(set) var aiSessionCreatedTaskCount = 0
     @Published private(set) var aiSessionNotificationPermission: AiSessionNotificationPermission = .unknown
     @Published private(set) var aiSessionOrcaOpenStates: [String: AiSessionOrcaOpenState] = [:]
+    @Published private(set) var dailyProductivityLatest: DailyProductivityMetric?
+    @Published private(set) var dailyProductivityBatchState: DailyProductivityBatchState = .idle
     @Published var lastError: String?
 
     let configuration: RatkoConfiguration?
     private let repository: TaskMarkdownRepository?
+    private let productivityRepository: DailyProductivityRepository?
     private var pollTimer: Timer?
     private var tickTimer: Timer?
     private var aiFeedbackModifiedAt: Date?
@@ -36,6 +39,9 @@ final class RatkoStore: ObservableObject {
     private var aiSessionMonitorWorkItem: DispatchWorkItem?
     private var aiSessionMonitorScanRunning = false
     private var aiSessionMonitorScanPending = false
+    private var humanTimerFingerprint: String?
+    private var dailyProductivityBatchRunning = false
+    private var dailyProductivityLastCheckedMinute: Int?
 
     init(configuration: RatkoConfiguration) {
         self.configuration = configuration
@@ -43,20 +49,33 @@ final class RatkoStore: ObservableObject {
             vaultURL: configuration.vaultURL,
             dataRoot: configuration.dataRoot
         )
+        self.productivityRepository = DailyProductivityRepository(
+            vaultURL: configuration.vaultURL,
+            dataRoot: configuration.dataRoot
+        )
         reloadAiFeedback(force: true)
         reload()
+        reloadDailyProductivity()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.reload() }
         }
         tickTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.now = Date() }
+            Task { @MainActor in
+                guard let self else { return }
+                self.now = Date()
+                self.runDailyProductivityBatchIfDue()
+            }
         }
-        DispatchQueue.main.async { [weak self] in self?.configureAiSessionNotifications() }
+        DispatchQueue.main.async { [weak self] in
+            self?.configureAiSessionNotifications()
+            self?.runDailyProductivityBatchIfDue(forceCheck: true)
+        }
     }
 
     init(error: Error) {
         configuration = nil
         repository = nil
+        productivityRepository = nil
         lastError = error.localizedDescription
     }
 
@@ -189,6 +208,13 @@ final class RatkoStore: ObservableObject {
                     diskTimers[index].activeStep = current
                 }
             }
+            if let productivityRepository {
+                let fingerprint = DailyProductivityRepository.timerFingerprint(tasks: diskTasks, timers: diskTimers)
+                if fingerprint != humanTimerFingerprint {
+                    try productivityRepository.synchronizeHumanTimers(tasks: diskTasks, timers: diskTimers, at: Date())
+                    humanTimerFingerprint = fingerprint
+                }
+            }
             if diskTimers != before { try repository.saveTimers(diskTimers) }
             if diskTasks != tasks { tasks = diskTasks }
             if diskTimers != timers { timers = diskTimers }
@@ -210,6 +236,105 @@ final class RatkoStore: ObservableObject {
             self.reloadAiFeedback(force: true)
             self.aiFeedbackStartedAt = nil
             self.aiFeedbackState = result.succeeded ? .idle : .error(result.message)
+        }
+    }
+
+    private func runDailyProductivityBatchIfDue(forceCheck: Bool = false) {
+        guard let configuration, let productivityRepository,
+              configuration.humanAiDailyBatchEnabledResolved,
+              !dailyProductivityBatchRunning
+        else { return }
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: now)
+        let minuteIdentity = (((components.year ?? 0) * 13 + (components.month ?? 0)) * 32 + (components.day ?? 0)) * 1_440
+            + (components.hour ?? 0) * 60 + (components.minute ?? 0)
+        guard forceCheck || dailyProductivityLastCheckedMinute != minuteIdentity else { return }
+        dailyProductivityLastCheckedMinute = minuteIdentity
+
+        do {
+            let archive = try productivityRepository.loadArchive()
+            let existing = Set(archive.days.map(\.date))
+            var dates = DailyProductivityBatch.dueDates(
+                now: now,
+                scheduleAt: configuration.humanAiDailyBatchScheduleAtResolved,
+                lookbackDays: configuration.humanAiDailyBatchLookbackDaysResolved,
+                existingDates: existing
+            )
+            let today = Calendar.current.startOfDay(for: now)
+            let recent = DailyProductivityBatch.dueDates(
+                now: now,
+                scheduleAt: configuration.humanAiDailyBatchScheduleAtResolved,
+                lookbackDays: 2,
+                existingDates: []
+            )
+            let generatedByDate = Dictionary(uniqueKeysWithValues: archive.days.map { ($0.date, $0.generatedAt) })
+            for date in recent {
+                let components = Calendar.current.dateComponents([.year, .month, .day], from: date)
+                let key = String(format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)
+                if let generated = generatedByDate[key], generated < today { dates.append(date) }
+            }
+            dates = Array(Set(dates)).sorted()
+            guard !dates.isEmpty else { return }
+            runDailyProductivityBatch(dates: dates, repository: productivityRepository)
+        } catch {
+            dailyProductivityBatchState = .error(error.localizedDescription)
+            lastError = "일일 인간·AI 집계 상태를 읽지 못했습니다: \(error.localizedDescription)"
+        }
+    }
+
+    func retryDailyProductivityBatch() {
+        guard let productivityRepository, !dailyProductivityBatchRunning else { return }
+        let calendar = Calendar.current
+        guard let yesterday = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: now)) else { return }
+        runDailyProductivityBatch(dates: [yesterday], repository: productivityRepository)
+    }
+
+    func openDailyProductivitySummary() {
+        guard let configuration, let productivityRepository else { return }
+        var components = URLComponents()
+        components.scheme = "obsidian"
+        components.host = "open"
+        let relative = String(productivityRepository.summaryURL.path.dropFirst(configuration.vaultURL.path.count + 1))
+        components.queryItems = [
+            URLQueryItem(name: "vault", value: configuration.vaultURL.lastPathComponent),
+            URLQueryItem(name: "file", value: relative),
+        ]
+        if let url = components.url { NSWorkspace.shared.open(url) }
+    }
+
+    private func runDailyProductivityBatch(dates: [Date], repository: DailyProductivityRepository) {
+        dailyProductivityBatchRunning = true
+        dailyProductivityBatchState = .running
+        let homeURL = FileManager.default.homeDirectoryForCurrentUser
+        let claudeProjects = ClaudeLogAccess.authorizedProjectURLs
+        let generatedAt = now
+        Task { [weak self] in
+            do {
+                let archive = try await Task.detached(priority: .utility) {
+                    try DailyProductivityBatch.run(
+                        dates: dates,
+                        repository: repository,
+                        homeURL: homeURL,
+                        authorizedClaudeProjects: claudeProjects,
+                        now: generatedAt
+                    )
+                }.value
+                self?.dailyProductivityLatest = archive.days.max { $0.date < $1.date }
+                self?.dailyProductivityBatchState = .idle
+            } catch {
+                self?.dailyProductivityBatchState = .error(error.localizedDescription)
+                self?.lastError = "일일 인간·AI 시간을 집계하지 못했습니다: \(error.localizedDescription)"
+            }
+            self?.dailyProductivityBatchRunning = false
+        }
+    }
+
+    private func reloadDailyProductivity() {
+        guard let productivityRepository else { return }
+        do {
+            dailyProductivityLatest = try productivityRepository.loadArchive().days.max { $0.date < $1.date }
+        } catch {
+            dailyProductivityBatchState = .error(error.localizedDescription)
         }
     }
 
@@ -396,9 +521,9 @@ final class RatkoStore: ObservableObject {
 
     private func restartAiSessionLogMonitor() {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let codex = home.appendingPathComponent(".codex/sessions", isDirectory: true).path
+        let codex = CodexLogLocations.sessionRoots(homeURL: home).map(\.path)
         let claude = ClaudeLogAccess.authorizedProjectURLs.values.map(\.path)
-        aiSessionLogMonitor?.restart(paths: [codex] + claude)
+        aiSessionLogMonitor?.restart(paths: codex + claude)
     }
 
     private func scheduleAiSessionNotificationScan() {

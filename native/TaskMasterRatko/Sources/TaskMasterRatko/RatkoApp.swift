@@ -508,6 +508,7 @@ struct RatkoPanel: View {
                             .background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                     }
                     aiFeedbackSection
+                    dailyProductivitySection
                     aiSessionsSection
                     taskSections
                 }
@@ -653,6 +654,73 @@ struct RatkoPanel: View {
         .padding(12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
         .accessibilityLabel("AI 세션 점검 열기")
+    }
+
+    private var dailyProductivitySection: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 7) {
+                Image(systemName: "chart.bar.xaxis").foregroundStyle(.green)
+                Text("인간·AI 일일 시간").font(.caption).bold()
+                if store.dailyProductivityBatchState == .running {
+                    ProgressView().controlSize(.mini)
+                    Text("집계 중").font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+
+            if let latest = store.dailyProductivityLatest {
+                Text("\(latest.date) 확정")
+                    .font(.caption2).foregroundStyle(.secondary)
+                HStack(spacing: 12) {
+                    dailyTime(label: "[인간]", milliseconds: latest.humanMilliseconds, color: .green)
+                    dailyTime(label: "[AI]", milliseconds: latest.interactiveAiMilliseconds, color: .blue)
+                    if latest.automationAiMilliseconds + latest.subagentAiMilliseconds > 0 {
+                        dailyTime(
+                            label: "자동·자식",
+                            milliseconds: latest.automationAiMilliseconds + latest.subagentAiMilliseconds,
+                            color: .secondary
+                        )
+                    }
+                }
+                if latest.claudeProjectCount == 0 {
+                    Text("Claude 로그 미연결 · Codex만 집계")
+                        .font(.caption2).foregroundStyle(.orange)
+                }
+            } else {
+                Text("첫 실행 시 최근 30일을 백필합니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            if case .error(let message) = store.dailyProductivityBatchState {
+                Text(message).font(.caption2).foregroundStyle(.red).lineLimit(2)
+            }
+
+            HStack {
+                Button("다시 집계") { store.retryDailyProductivityBatch() }
+                    .buttonStyle(.plain)
+                    .disabled(store.dailyProductivityBatchState == .running)
+                Spacer()
+                Button("전체 열기") { store.openDailyProductivitySummary() }
+                    .buttonStyle(.plain)
+                    .disabled(store.dailyProductivityLatest == nil)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func dailyTime(label: String, milliseconds: Double, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(.caption2).foregroundStyle(color)
+            Text(compactDailyDuration(milliseconds)).font(.caption).bold()
+        }
+    }
+
+    private func compactDailyDuration(_ milliseconds: Double) -> String {
+        let minutes = max(0, Int((milliseconds / 60_000).rounded()))
+        return minutes >= 60 ? "\(minutes / 60)시간 \(minutes % 60)분" : "\(minutes)분"
     }
 
     private var header: some View {

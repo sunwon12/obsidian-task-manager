@@ -63,6 +63,9 @@ settings.setdefault("aiFeedbackPath", "02_일상/03_성찰/일일-일정-피드�
 settings.setdefault("aiFeedbackBinary", "~/.local/bin/claude")
 settings.setdefault("aiFeedbackPrompt", "/daily-schedule-feedback")
 settings.setdefault("aiFeedbackTimeoutMinutes", 10)
+settings.setdefault("humanAiDailyBatchEnabled", True)
+settings.setdefault("humanAiDailyBatchScheduleAt", "00:10")
+settings.setdefault("humanAiDailyBatchLookbackDays", 30)
 path.write_text(json.dumps(settings, ensure_ascii=False, indent=2) + "\n")
 PY
 

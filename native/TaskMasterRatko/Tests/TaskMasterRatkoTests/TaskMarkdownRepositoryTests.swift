@@ -329,6 +329,9 @@ final class TaskMarkdownRepositoryTests: XCTestCase {
         XCTAssertEqual(configuration.aiFeedbackPromptResolved, "/daily-schedule-feedback")
         XCTAssertEqual(configuration.aiFeedbackTimeoutMinutesResolved, 10)
         XCTAssertEqual(configuration.taskAiTimeoutMinutesResolved, 5)
+        XCTAssertTrue(configuration.humanAiDailyBatchEnabledResolved)
+        XCTAssertEqual(configuration.humanAiDailyBatchScheduleAtResolved, "00:10")
+        XCTAssertEqual(configuration.humanAiDailyBatchLookbackDaysResolved, 30)
     }
 
     func testTaskAiParsesClaudeEnvelopeAndProposedChanges() throws {

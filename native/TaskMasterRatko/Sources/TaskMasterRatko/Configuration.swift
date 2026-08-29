@@ -8,6 +8,9 @@ struct RatkoConfiguration: Codable {
     var aiFeedbackPrompt: String?
     var aiFeedbackTimeoutMinutes: Int?
     var taskAiTimeoutMinutes: Int?
+    var humanAiDailyBatchEnabled: Bool?
+    var humanAiDailyBatchScheduleAt: String?
+    var humanAiDailyBatchLookbackDays: Int?
 
     var vaultURL: URL {
         URL(fileURLWithPath: (vaultPath as NSString).expandingTildeInPath, isDirectory: true)
@@ -39,6 +42,16 @@ struct RatkoConfiguration: Codable {
 
     var taskAiTimeoutMinutesResolved: Int {
         min(30, max(1, taskAiTimeoutMinutes ?? 5))
+    }
+
+    var humanAiDailyBatchEnabledResolved: Bool { humanAiDailyBatchEnabled ?? true }
+
+    var humanAiDailyBatchScheduleAtResolved: String {
+        nonEmpty(humanAiDailyBatchScheduleAt) ?? "00:10"
+    }
+
+    var humanAiDailyBatchLookbackDaysResolved: Int {
+        min(90, max(1, humanAiDailyBatchLookbackDays ?? 30))
     }
 
     static func load(
