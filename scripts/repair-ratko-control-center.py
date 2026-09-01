@@ -9,7 +9,6 @@ import pathlib
 import plistlib
 import shutil
 import sys
-import tempfile
 
 
 RATKO_BUNDLE_ID = "com.taskmaster.ratko"
@@ -64,7 +63,7 @@ def main() -> int:
         return 0
 
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    backup = pathlib.Path(tempfile.gettempdir()) / f"group.com.apple.controlcenter.plist.ratko-backup-{stamp}"
+    backup = pathlib.Path("/tmp") / f"group.com.apple.controlcenter.plist.ratko-backup-{stamp}"
     shutil.copy2(path, backup)
     outer["trackedApplications"] = plistlib.dumps(entries, fmt=plistlib.FMT_BINARY, sort_keys=False)
     temporary = path.with_name(f".{path.name}.ratko-{os.getpid()}")
