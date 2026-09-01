@@ -2,6 +2,7 @@ import Foundation
 
 enum MenuBarPlacement {
     static let ratkoPositionKey = "NSStatusItem Preferred Position Item-0"
+    static let ratkoVisibilityKey = "NSStatusItem VisibleCC Item-0"
     static let wifiPositionKey = "NSStatusItem Preferred Position WiFi"
 
     private static let fallbackWiFiPosition = 243
@@ -18,6 +19,7 @@ enum MenuBarPlacement {
             ?? fallbackWiFiPosition
         let ratkoPosition = wifiPosition + leadingOffset
         ratkoDefaults.set(ratkoPosition, forKey: ratkoPositionKey)
+        ratkoDefaults.set(true, forKey: ratkoVisibilityKey)
         return ratkoPosition
     }
 }

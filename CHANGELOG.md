@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Ratko now has a read-only `launchd 자동화` window for user-installed
+  `~/Library/LaunchAgents`. It separates running, normally waiting, retrying/failed, and unloaded
+  jobs; shows schedules, PIDs, run counts, commands, plists, and available logs; and provides
+  search plus running/problem filters. Human-readable Korean purpose names lead each row while the
+  stable launchd Label remains visible as secondary diagnostic text.
+
 - Every Swift Ratko task card now opens a task-scoped AI window. It starts with that task's title,
   body, steps, current phase, and conversation as context, and can answer questions or propose
   coarse `[인간]`/`[AI]` steps, a memo append, or a body edit.
@@ -33,6 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a 3-7 step count, a decision-first order, or detailed execution instructions.
 
 ### Fixed
+
+- Launchd inspection now opens as a key front window from the menu-bar panel instead of appearing
+  behind the active app, matching Ratko's other `LSUIElement` window presentation contracts.
+- Ratko restores `NSStatusItem VisibleCC Item-0` as well as its Wi-Fi-adjacent position. On macOS 26,
+  the installer also backs up the Control Center preferences and removes only cross-app
+  `menuItemLocations` references that incorrectly assign Ratko to another disabled app, then reloads
+  Control Center. Other apps' allow states and menu-bar settings are preserved.
 
 - Task-scoped AI buttons in the Swift menu-bar panel now activate and raise the selected task's
   AI window. `openWindow` had created the window behind the active app because Ratko runs as an

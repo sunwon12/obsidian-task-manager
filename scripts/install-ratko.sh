@@ -51,6 +51,16 @@ PLIST
 # 실행 중 앱 번들을 교체한 직후 RBS가 POSIX 162로 재실행을 거부하지 않게 완성된 번들을 다시 서명한다.
 codesign --force --deep --sign - "$APP_DIR"
 
+# macOS 26 can leave Ratko's menu item under another disabled app in the nested
+# Control Center allow-list. Repair only that cross-reference and preserve a backup.
+CONTROL_CENTER_PLIST="$HOME/Library/Group Containers/group.com.apple.controlcenter/Library/Preferences/group.com.apple.controlcenter.plist"
+CONTROL_CENTER_REPAIR="$(/usr/bin/python3 "$SCRIPT_DIR/repair-ratko-control-center.py" "$CONTROL_CENTER_PLIST")"
+if [[ "$CONTROL_CENTER_REPAIR" == repaired:* ]]; then
+  print "Control Center 랏코 매핑 복구 (${CONTROL_CENTER_REPAIR#repaired:})"
+  killall cfprefsd 2>/dev/null || true
+  killall ControlCenter 2>/dev/null || true
+fi
+
 /usr/bin/python3 - "$CONFIG_DIR/config.json" "$VAULT_PATH" <<'PY'
 import json, pathlib, sys
 path = pathlib.Path(sys.argv[1])

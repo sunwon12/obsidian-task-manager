@@ -291,6 +291,7 @@ final class TaskMarkdownRepositoryTests: XCTestCase {
 
         XCTAssertEqual(position, 263)
         XCTAssertEqual(ratkoDefaults.integer(forKey: MenuBarPlacement.ratkoPositionKey), 263)
+        XCTAssertTrue(ratkoDefaults.bool(forKey: MenuBarPlacement.ratkoVisibilityKey))
     }
 
     func testParsesLatestAiFeedbackSection() {

@@ -340,7 +340,7 @@ enum RatkoUiTestDiagnostics {
 private enum RatkoUiTestWindow {
     private static var window: NSWindow?
 
-    static func open(store: RatkoStore) {
+    static func open(store: RatkoStore, launchdStore: LaunchdJobsStore) {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 400, height: 760),
             styleMask: [.titled, .closable, .resizable],
@@ -348,7 +348,7 @@ private enum RatkoUiTestWindow {
             defer: false
         )
         window.title = "랏코 UI 검증"
-        window.contentView = NSHostingView(rootView: RatkoPanel(store: store))
+        window.contentView = NSHostingView(rootView: RatkoPanel(store: store, launchdStore: launchdStore))
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApplication.shared.activate(ignoringOtherApps: true)
@@ -428,6 +428,7 @@ struct RatkoTaskAiWindowResolver: NSViewRepresentable {
 struct TaskMasterRatkoApp: App {
     @NSApplicationDelegateAdaptor(RatkoApplicationDelegate.self) private var appDelegate
     @StateObject private var store: RatkoStore
+    @StateObject private var launchdStore: LaunchdJobsStore
 
     init() {
         MenuBarPlacement.pinNextToWiFi()
@@ -439,6 +440,8 @@ struct TaskMasterRatkoApp: App {
             model = RatkoStore(error: error)
         }
         _store = StateObject(wrappedValue: model)
+        let launchdModel = LaunchdJobsStore()
+        _launchdStore = StateObject(wrappedValue: launchdModel)
         appDelegate.onOpenAiSessions = { [weak model] in
             guard let model else { return }
             model.scanAiSessions()
@@ -446,14 +449,14 @@ struct TaskMasterRatkoApp: App {
         }
         if ProcessInfo.processInfo.environment["RATKO_UI_TEST"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                RatkoUiTestWindow.open(store: model)
+                RatkoUiTestWindow.open(store: model, launchdStore: launchdModel)
             }
         }
     }
 
     var body: some Scene {
         MenuBarExtra {
-            RatkoPanel(store: store)
+            RatkoPanel(store: store, launchdStore: launchdStore)
         } label: {
             RatkoIconView(kind: .menuBar, size: 14)
                 .accessibilityLabel("TaskMaster 랏코")
@@ -471,6 +474,11 @@ struct TaskMasterRatkoApp: App {
         }
         .defaultSize(width: 700, height: 720)
 
+        Window("launchd 자동화", id: "ratko-launchd-jobs") {
+            LaunchdJobsView(store: launchdStore)
+        }
+        .defaultSize(width: 720, height: 720)
+
         WindowGroup("태스크 AI", for: String.self) { $taskId in
             if let taskId {
                 TaskAiView(store: store, taskId: taskId)
@@ -482,6 +490,7 @@ struct TaskMasterRatkoApp: App {
 
 struct RatkoPanel: View {
     @ObservedObject var store: RatkoStore
+    @ObservedObject var launchdStore: LaunchdJobsStore
     @Environment(\.openWindow) private var openWindow
     @State private var newTask = ""
     @State private var feedbackExpanded = false
@@ -510,6 +519,7 @@ struct RatkoPanel: View {
                     aiFeedbackSection
                     dailyProductivitySection
                     aiSessionsSection
+                    launchdJobsSection
                     taskSections
                 }
                 .padding(14)
@@ -525,6 +535,7 @@ struct RatkoPanel: View {
         .frame(height: CGFloat(clampedPanelHeight))
         .onAppear {
             panelHeight = clampedPanelHeight
+            launchdStore.refreshIfNeeded()
         }
         .onChange(of: draggingTaskId) { taskId in
             if taskId == nil {
@@ -654,6 +665,43 @@ struct RatkoPanel: View {
         .padding(12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
         .accessibilityLabel("AI 세션 점검 열기")
+    }
+
+    private var launchdJobsSection: some View {
+        Button {
+            launchdStore.refresh()
+            RatkoLaunchdWindowPresentation.open(using: openWindow)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "gearshape.2.fill")
+                    .font(.title3)
+                    .foregroundStyle(.indigo)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text("launchd 자동화").font(.caption).bold()
+                        if launchdStore.scanState == .running {
+                            ProgressView().controlSize(.mini)
+                        }
+                    }
+                    if launchdStore.lastScannedAt == nil {
+                        Text("내 LaunchAgent의 등록·실행 상태를 확인합니다.")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    } else {
+                        Text("실행 \(launchdStore.runningCount) · 대기 \(launchdStore.waitingCount) · 문제 \(launchdStore.problemCount) · 미등록 \(launchdStore.unloadedCount)")
+                            .font(.caption2)
+                            .foregroundStyle(launchdStore.problemCount > 0 ? .orange : .secondary)
+                    }
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption).foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityLabel("launchd 자동화 점검 열기")
     }
 
     private var dailyProductivitySection: some View {

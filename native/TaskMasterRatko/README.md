@@ -16,6 +16,11 @@ Obsidian/Electron과 별도 프로세스로 실행되는 macOS 메뉴바 앱이�
 앱을 시작할 때마다 macOS가 저장한 Wi-Fi 상태 아이템 위치를 읽고 랏코의
 `NSStatusItem Preferred Position Item-0`을 바로 왼쪽 값으로 다시 기록한다. 따라서
 다른 메뉴바 앱이 많아져도 랏코는 Wi-Fi 옆의 항상 보이는 영역을 우선한다.
+같은 시점에 `NSStatusItem VisibleCC Item-0`도 켜서 Control Center가 이전 실행의 숨김 값을
+남겨 두었더라도 유일한 메뉴바 항목이 제거되며 앱까지 종료되는 일을 막는다.
+설치기는 macOS 26의 중첩 `trackedApplications`도 확인한다. 랏코 자체 허용값은 켠 채 다른 앱이
+랏코의 `menuItemLocations`를 잘못 소유한 교차 참조만 제거하고, 수정 전 원본을 `/tmp`에 백업한 뒤
+`cfprefsd`와 Control Center를 재시작한다. 전체 메뉴바 설정이나 다른 앱의 허용값은 초기화하지 않는다.
 메뉴바·패널 헤더·포커스 창은 기존 Electron 버전에서 사용하던 `src/assets`의 랏코
 PNG를 앱 번들에 복사해 그대로 사용하며, 일반 수달 이모지로 대체하지 않는다.
 메뉴바 자산은 14pt로 그린다. 랏코는 사각형을 꽉 채운 컬러 이미지라 18pt에서도
@@ -47,6 +52,13 @@ Claude Code·Codex 프로세스를 찾고 로컬 transcript를 읽어 한 화면
 드러나는 제목으로 카드를 만들고, 빈 셸·권한 안내·인사·확인 답변·단순 사실 질문·일회성 잡담은 버린다.
 AI에는 전체 transcript가 아니라 최초 요청과 최근 진행 요약만 전달한다. transcript를 읽지 못해 cwd만
 아는 Claude 세션도 카드로 만들지 않는다.
+
+`launchd 자동화`는 `~/Library/LaunchAgents/*.plist`만 읽어 사용자가 설치한 자동화의 현재 상태를
+보여준다. 시스템의 수백 개 Apple 서비스는 기본 목록에서 제외한다. 실행 중·예약 대기·마지막 실행 실패·
+KeepAlive 재시도·plist만 남은 미등록 상태를 구분하고, 실행 주기·PID·실행 횟수·마지막 종료 상태와
+명령을 함께 표시한다. 목록 제목은 `Confluence 쿠키 프록시`처럼 용도를 설명하는 한글 이름을 쓰고,
+launchctl과 스크립트가 참조하는 실제 Label은 아래 보조 정보로 보존한다. 상세 행에서 plist와 실제 존재하는 stdout·stderr 로그를 열 수 있다. 점검 화면은
+읽기 전용이며 잡을 시작하거나 중지하지 않는다.
 
 앱이 실행 중일 때는 Codex 세션 폴더와 사용자가 연결한 Claude 프로젝트 폴더를 macOS 파일 이벤트로
 감시한다. 로그 파일이 실제로 바뀐 경우에만 로컬 점검을 한 번 실행하고, 대화형 세션이
