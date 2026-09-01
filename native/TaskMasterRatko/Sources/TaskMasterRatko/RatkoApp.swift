@@ -447,12 +447,14 @@ private enum RatkoFocusWindowPresentation {
 }
 
 private final class RatkoQuickPanelWindow: NSWindow {
+    var onDismiss: (() -> Void)?
+
     override func cancelOperation(_ sender: Any?) {
-        orderOut(sender)
+        onDismiss?()
     }
 
     override func close() {
-        orderOut(nil)
+        onDismiss?()
     }
 }
 
@@ -464,14 +466,18 @@ enum RatkoQuickPanelPresentation {
     private static var globalMouseMonitor: Any?
     private static var localMouseMonitor: Any?
 
-    static var isVisible: Bool { panel?.isVisible == true }
+    static var isVisible: Bool {
+        matchingWindows(in: NSApplication.shared.windows).contains(where: \.isVisible)
+    }
 
     static func toggle(store: RatkoStore, launchdStore: LaunchdJobsStore) {
         if isVisible {
             hide()
             return
         }
-        let panel = panel ?? makePanel(store: store, launchdStore: launchdStore)
+        let panel = panel
+            ?? matchingWindows(in: NSApplication.shared.windows).first as? RatkoQuickPanelWindow
+            ?? makePanel(store: store, launchdStore: launchdStore)
         self.panel = panel
         panel.center()
         panel.makeKeyAndOrderFront(nil)
@@ -485,8 +491,12 @@ enum RatkoQuickPanelPresentation {
 
     static func hide() {
         removeCloseMonitoring()
-        panel?.orderOut(nil)
+        matchingWindows(in: NSApplication.shared.windows).forEach { $0.orderOut(nil) }
         NSLog("[Ratko] 중앙 빠른 패널 닫힘")
+    }
+
+    static func matchingWindows(in windows: [NSWindow]) -> [NSWindow] {
+        windows.filter { $0.identifier == identifier }
     }
 
     private static func makePanel(
@@ -504,6 +514,7 @@ enum RatkoQuickPanelPresentation {
         panel.level = .floating
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
+        panel.tabbingMode = .disallowed
         panel.animationBehavior = .utilityWindow
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentMinSize = NSSize(width: 400, height: RatkoPanelSizing.minimumHeight)
@@ -514,6 +525,7 @@ enum RatkoQuickPanelPresentation {
             )
         )
         panel.setFrameAutosaveName("ratko.quick-panel.window")
+        panel.onDismiss = { hide() }
 
         let actions = RatkoPanelWindowActions(
             closePanel: { hide() },

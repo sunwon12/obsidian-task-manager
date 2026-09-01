@@ -111,6 +111,13 @@ final class RatkoApplicationDelegate: NSObject, NSApplicationDelegate, UNUserNot
     var onToggleQuickPanel: (() -> Void)?
     private var globalHotKey: RatkoGlobalHotKey?
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // AppKit reserves Command-T for automatic window tabs unless the app opts out.
+        // Ratko owns that chord as a global quick-panel toggle, so allowing tabs here
+        // can create a second window while the quick panel is key.
+        NSWindow.allowsAutomaticWindowTabbing = false
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
         globalHotKey = RatkoGlobalHotKey { [weak self] in

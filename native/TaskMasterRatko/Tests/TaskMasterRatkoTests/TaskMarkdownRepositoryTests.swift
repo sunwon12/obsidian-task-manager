@@ -89,6 +89,32 @@ final class TaskMarkdownRepositoryTests: XCTestCase {
     }
 
     @MainActor
+    func testQuickPanelWindowLookupOnlyReturnsItsSingleWindowIdentity() {
+        let quickPanel = NSWindow()
+        quickPanel.identifier = RatkoQuickPanelPresentation.identifier
+        let otherWindow = NSWindow()
+        otherWindow.identifier = NSUserInterfaceItemIdentifier("other-window")
+
+        XCTAssertEqual(
+            RatkoQuickPanelPresentation.matchingWindows(in: [otherWindow, quickPanel]),
+            [quickPanel]
+        )
+    }
+
+    @MainActor
+    func testAppDisablesAutomaticWindowTabbingReservedByCommandT() {
+        let original = NSWindow.allowsAutomaticWindowTabbing
+        defer { NSWindow.allowsAutomaticWindowTabbing = original }
+        NSWindow.allowsAutomaticWindowTabbing = true
+
+        RatkoApplicationDelegate().applicationWillFinishLaunching(
+            Notification(name: NSApplication.willFinishLaunchingNotification)
+        )
+
+        XCTAssertFalse(NSWindow.allowsAutomaticWindowTabbing)
+    }
+
+    @MainActor
     func testAppStoreDefersVaultReadsUntilFirstPanelEntry() throws {
         _ = try fixture()
         let store = RatkoStore(
