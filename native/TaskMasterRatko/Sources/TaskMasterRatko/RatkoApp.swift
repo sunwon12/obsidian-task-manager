@@ -634,7 +634,7 @@ struct TaskMasterRatkoApp: App {
         let model: RatkoStore
         do {
             let configuration = try RatkoConfiguration.load()
-            model = RatkoStore(configuration: configuration)
+            model = RatkoStore(configuration: configuration, autoStart: false)
         } catch {
             model = RatkoStore(error: error)
         }
@@ -747,6 +747,7 @@ struct RatkoPanel: View {
             maxHeight: windowActions == nil ? CGFloat(clampedPanelHeight) : .infinity
         )
         .onAppear {
+            store.startIfNeeded()
             if windowActions == nil { panelHeight = clampedPanelHeight }
             launchdStore.refreshIfNeeded()
         }

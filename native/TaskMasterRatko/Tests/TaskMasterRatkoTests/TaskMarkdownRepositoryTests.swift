@@ -89,6 +89,19 @@ final class TaskMarkdownRepositoryTests: XCTestCase {
     }
 
     @MainActor
+    func testAppStoreDefersVaultReadsUntilFirstPanelEntry() throws {
+        _ = try fixture()
+        let store = RatkoStore(
+            configuration: RatkoConfiguration(vaultPath: root.path),
+            autoStart: false
+        )
+
+        XCTAssertTrue(store.tasks.isEmpty)
+        store.startIfNeeded()
+        XCTAssertEqual(store.tasks.map(\.title), ["랏코 이관"])
+    }
+
+    @MainActor
     func testTaskAiWindowLookupTargetsTheSelectedTask() {
         let first = NSWindow()
         first.identifier = RatkoTaskAiWindowPresentation.identifier(for: "task_first")

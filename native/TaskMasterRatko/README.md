@@ -127,4 +127,7 @@ scripts/install-ratko.sh /absolute/path/to/vault
 설치 스크립트는 실행 중인 이전 앱을 종료한 뒤 `~/Applications/TaskMasterRatko.app`을
 교체하고 완성된 번들을 ad-hoc 서명한 뒤 로그인 LaunchAgent를 만들어 새 바이너리를 실행한다.
 번들 서명은 실행 파일 교체 직후 macOS RBS가 POSIX 162로 재실행을 거부하는 일을 막는다. 설치 시 만든
+identifier 기반 지정 요구사항은 바이너리 갱신 뒤에도 같은 로컬 앱 신원을 유지해 Desktop vault 접근
+승인이 매번 새 CDHash로 끊기지 않게 한다. 앱 시작은 파일을 읽기 전에 메뉴바와 전역 단축키부터
+등록하고, 첫 패널 진입에서 vault 읽기·타이머·AI 세션 감시를 시작한다.
 `config.json`에서 피드백 노트 경로·Claude 실행 파일·프롬프트·제한 시간을 바꿀 수 있다.

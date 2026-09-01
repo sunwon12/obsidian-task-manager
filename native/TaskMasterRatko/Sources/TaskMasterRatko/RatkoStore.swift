@@ -42,8 +42,9 @@ final class RatkoStore: ObservableObject {
     private var humanTimerFingerprint: String?
     private var dailyProductivityBatchRunning = false
     private var dailyProductivityLastCheckedMinute: Int?
+    private var hasStarted = false
 
-    init(configuration: RatkoConfiguration) {
+    init(configuration: RatkoConfiguration, autoStart: Bool = true) {
         self.configuration = configuration
         self.repository = TaskMarkdownRepository(
             vaultURL: configuration.vaultURL,
@@ -53,6 +54,13 @@ final class RatkoStore: ObservableObject {
             vaultURL: configuration.vaultURL,
             dataRoot: configuration.dataRoot
         )
+        if autoStart { startIfNeeded() }
+    }
+
+    func startIfNeeded() {
+        guard !hasStarted else { return }
+        hasStarted = true
+        guard configuration != nil else { return }
         reloadAiFeedback(force: true)
         reload()
         reloadDailyProductivity()

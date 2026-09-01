@@ -49,7 +49,11 @@ PLIST
 
 # SwiftPM 산출물은 실행 파일만 linker-sign되어 Info.plist가 서명에 묶이지 않는다.
 # 실행 중 앱 번들을 교체한 직후 RBS가 POSIX 162로 재실행을 거부하지 않게 완성된 번들을 다시 서명한다.
-codesign --force --deep --sign - "$APP_DIR"
+# identifier 기반 designated requirement를 고정해 바이너리가 바뀔 때마다 Desktop vault 승인이 새 CDHash로
+# 끊기지 않게 한다. 이 앱은 개인 로컬 설치물이라 해당 bundle id를 이 경로에서 우리가 독점한다.
+codesign --force --deep --sign - \
+  --requirements '=designated => identifier "com.taskmaster.ratko"' \
+  "$APP_DIR"
 
 # macOS 26 can leave Ratko's menu item under another disabled app in the nested
 # Control Center allow-list. Repair only that cross-reference and preserve a backup.

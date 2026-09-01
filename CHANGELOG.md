@@ -45,6 +45,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Ratko now registers its menu-bar UI and global shortcut before touching the Desktop vault, then
+  starts file reads and background monitors on the first panel entry. The installer embeds a stable
+  identifier-based designated requirement so an updated local binary does not present macOS as a
+  new CDHash-only app on every build and stall before shortcut registration while access is pending.
+
 - Launchd inspection now opens as a key front window from the menu-bar panel instead of appearing
   behind the active app, matching Ratko's other `LSUIElement` window presentation contracts.
 - Ratko restores `NSStatusItem VisibleCC Item-0` as well as its Wi-Fi-adjacent position. On macOS 26,
