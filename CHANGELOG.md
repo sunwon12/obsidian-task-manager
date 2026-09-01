@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Swift Ratko registers global `Command+T` to toggle a 400-point-wide quick panel at the center of
+  the main display, while clicking the menu-bar otter keeps the existing anchored popover. The
+  centered window closes from the shortcut, Escape, its close controls, outside clicks, or another
+  app activation, and routes focus, AI-session, launchd, and task-AI actions to frontmost windows.
+
 - Ratko now has a read-only `launchd 자동화` window for user-installed
   `~/Library/LaunchAgents`. It separates running, normally waiting, retrying/failed, and unloaded
   jobs; shows schedules, PIDs, run counts, commands, plists, and available logs; and provides

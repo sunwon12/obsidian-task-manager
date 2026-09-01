@@ -358,6 +358,8 @@ private enum RatkoUiTestWindow {
 
 @MainActor
 enum RatkoTaskAiWindowPresentation {
+    private static var appKitWindows: [String: NSWindow] = [:]
+
     static func identifier(for taskId: String) -> NSUserInterfaceItemIdentifier {
         NSUserInterfaceItemIdentifier("ratko-task-ai-\(taskId)")
     }
@@ -368,6 +370,27 @@ enum RatkoTaskAiWindowPresentation {
             NSApplication.shared.activate(ignoringOtherApps: true)
             window(for: taskId)?.makeKeyAndOrderFront(nil)
         }
+    }
+
+    static func open(taskId: String, store: RatkoStore) {
+        if let window = window(for: taskId) ?? appKitWindows[taskId] {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 680),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "태스크 AI"
+        window.identifier = identifier(for: taskId)
+        window.contentView = NSHostingView(rootView: TaskAiView(store: store, taskId: taskId))
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        appKitWindows[taskId] = window
     }
 
     static func register(_ window: NSWindow, taskId: String) {
@@ -382,6 +405,182 @@ enum RatkoTaskAiWindowPresentation {
 
     static func window(for taskId: String, in windows: [NSWindow]) -> NSWindow? {
         windows.first { $0.identifier == identifier(for: taskId) }
+    }
+}
+
+struct RatkoPanelWindowActions {
+    let closePanel: () -> Void
+    let openFocus: () -> Void
+    let openAiSessions: () -> Void
+    let openLaunchdJobs: () -> Void
+    let openTaskAi: (String) -> Void
+}
+
+@MainActor
+private enum RatkoFocusWindowPresentation {
+    private static let identifier = NSUserInterfaceItemIdentifier("ratko-focus-appkit")
+    private static var appKitWindow: NSWindow?
+
+    static func open(store: RatkoStore) {
+        if let window = NSApplication.shared.windows.first(where: { $0.identifier == identifier }) {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 260),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "랏코 포커스"
+        window.identifier = identifier
+        window.contentView = NSHostingView(rootView: FloatingFocusView(
+            store: store,
+            openTaskAi: { taskId in RatkoTaskAiWindowPresentation.open(taskId: taskId, store: store) }
+        ))
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        appKitWindow = window
+    }
+}
+
+private final class RatkoQuickPanelWindow: NSWindow {
+    override func cancelOperation(_ sender: Any?) {
+        orderOut(sender)
+    }
+
+    override func close() {
+        orderOut(nil)
+    }
+}
+
+@MainActor
+enum RatkoQuickPanelPresentation {
+    static let identifier = NSUserInterfaceItemIdentifier("ratko-quick-panel")
+    private static var panel: RatkoQuickPanelWindow?
+    private static var activatedApplicationObserver: NSObjectProtocol?
+    private static var globalMouseMonitor: Any?
+    private static var localMouseMonitor: Any?
+
+    static var isVisible: Bool { panel?.isVisible == true }
+
+    static func toggle(store: RatkoStore, launchdStore: LaunchdJobsStore) {
+        if isVisible {
+            hide()
+            return
+        }
+        let panel = panel ?? makePanel(store: store, launchdStore: launchdStore)
+        self.panel = panel
+        panel.center()
+        panel.makeKeyAndOrderFront(nil)
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            guard panel.isVisible else { return }
+            installCloseMonitoring(for: panel)
+        }
+        NSLog("[Ratko] 중앙 빠른 패널 열림")
+    }
+
+    static func hide() {
+        removeCloseMonitoring()
+        panel?.orderOut(nil)
+        NSLog("[Ratko] 중앙 빠른 패널 닫힘")
+    }
+
+    private static func makePanel(
+        store: RatkoStore,
+        launchdStore: LaunchdJobsStore
+    ) -> RatkoQuickPanelWindow {
+        let panel = RatkoQuickPanelWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 620),
+            styleMask: [.titled, .closable, .resizable, .utilityWindow],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = "오늘의 랏코 · ⌘T로 닫기"
+        panel.identifier = identifier
+        panel.level = .floating
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.animationBehavior = .utilityWindow
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.contentMinSize = NSSize(width: 400, height: RatkoPanelSizing.minimumHeight)
+        panel.contentMaxSize = NSSize(
+            width: 400,
+            height: RatkoPanelSizing.maximumHeight(
+                visibleScreenHeight: Double((NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.height ?? 800)
+            )
+        )
+        panel.setFrameAutosaveName("ratko.quick-panel.window")
+
+        let actions = RatkoPanelWindowActions(
+            closePanel: { hide() },
+            openFocus: {
+                hide()
+                RatkoFocusWindowPresentation.open(store: store)
+            },
+            openAiSessions: {
+                hide()
+                store.scanAiSessions()
+                RatkoAiSessionsWindowPresentation.open(store: store)
+            },
+            openLaunchdJobs: {
+                hide()
+                launchdStore.refresh()
+                RatkoLaunchdWindowPresentation.open(store: launchdStore)
+            },
+            openTaskAi: { taskId in
+                hide()
+                RatkoTaskAiWindowPresentation.open(taskId: taskId, store: store)
+            }
+        )
+        panel.contentView = NSHostingView(rootView: RatkoPanel(
+            store: store,
+            launchdStore: launchdStore,
+            windowActions: actions
+        ))
+        return panel
+    }
+
+    private static func installCloseMonitoring(for panel: NSWindow) {
+        removeCloseMonitoring()
+        activatedApplicationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { notification in
+            guard let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                    as? NSRunningApplication,
+                  application.processIdentifier != ProcessInfo.processInfo.processIdentifier
+            else { return }
+            Task { @MainActor in hide() }
+        }
+        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { _ in Task { @MainActor in hide() } }
+        localMouseMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { event in
+            if event.window !== panel { Task { @MainActor in hide() } }
+            return event
+        }
+    }
+
+    private static func removeCloseMonitoring() {
+        if let activatedApplicationObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(activatedApplicationObserver)
+            self.activatedApplicationObserver = nil
+        }
+        if let globalMouseMonitor {
+            NSEvent.removeMonitor(globalMouseMonitor)
+            self.globalMouseMonitor = nil
+        }
+        if let localMouseMonitor {
+            NSEvent.removeMonitor(localMouseMonitor)
+            self.localMouseMonitor = nil
+        }
     }
 }
 
@@ -447,9 +646,18 @@ struct TaskMasterRatkoApp: App {
             model.scanAiSessions()
             RatkoAiSessionsWindowPresentation.open(store: model)
         }
+        appDelegate.onToggleQuickPanel = { [weak model, weak launchdModel] in
+            guard let model, let launchdModel else { return }
+            RatkoQuickPanelPresentation.toggle(store: model, launchdStore: launchdModel)
+        }
         if ProcessInfo.processInfo.environment["RATKO_UI_TEST"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 RatkoUiTestWindow.open(store: model, launchdStore: launchdModel)
+            }
+        }
+        if ProcessInfo.processInfo.environment["RATKO_QUICK_PANEL_TEST"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                RatkoQuickPanelPresentation.toggle(store: model, launchdStore: launchdModel)
             }
         }
     }
@@ -491,6 +699,7 @@ struct TaskMasterRatkoApp: App {
 struct RatkoPanel: View {
     @ObservedObject var store: RatkoStore
     @ObservedObject var launchdStore: LaunchdJobsStore
+    var windowActions: RatkoPanelWindowActions? = nil
     @Environment(\.openWindow) private var openWindow
     @State private var newTask = ""
     @State private var feedbackExpanded = false
@@ -529,12 +738,16 @@ struct RatkoPanel: View {
             }
             Divider()
             footer
-            resizeHandle
+            if windowActions == nil { resizeHandle }
         }
         .frame(width: 400)
-        .frame(height: CGFloat(clampedPanelHeight))
+        .frame(
+            minHeight: CGFloat(windowActions == nil ? clampedPanelHeight : RatkoPanelSizing.minimumHeight),
+            idealHeight: CGFloat(windowActions == nil ? clampedPanelHeight : RatkoPanelSizing.defaultHeight),
+            maxHeight: windowActions == nil ? CGFloat(clampedPanelHeight) : .infinity
+        )
         .onAppear {
-            panelHeight = clampedPanelHeight
+            if windowActions == nil { panelHeight = clampedPanelHeight }
             launchdStore.refreshIfNeeded()
         }
         .onChange(of: draggingTaskId) { taskId in
@@ -633,8 +846,12 @@ struct RatkoPanel: View {
 
     private var aiSessionsSection: some View {
         Button {
-            store.scanAiSessions()
-            RatkoAiSessionsWindowPresentation.open(using: openWindow)
+            if let windowActions {
+                windowActions.openAiSessions()
+            } else {
+                store.scanAiSessions()
+                RatkoAiSessionsWindowPresentation.open(using: openWindow)
+            }
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: "waveform.path.ecg")
@@ -669,8 +886,12 @@ struct RatkoPanel: View {
 
     private var launchdJobsSection: some View {
         Button {
-            launchdStore.refresh()
-            RatkoLaunchdWindowPresentation.open(using: openWindow)
+            if let windowActions {
+                windowActions.openLaunchdJobs()
+            } else {
+                launchdStore.refresh()
+                RatkoLaunchdWindowPresentation.open(using: openWindow)
+            }
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: "gearshape.2.fill")
@@ -780,7 +1001,13 @@ struct RatkoPanel: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Button { openWindow(id: "ratko-focus") } label: {
+            Button {
+                if let windowActions {
+                    windowActions.openFocus()
+                } else {
+                    openWindow(id: "ratko-focus")
+                }
+            } label: {
                 Image(systemName: "pin.square")
             }
             .buttonStyle(.plain)
@@ -804,7 +1031,8 @@ struct RatkoPanel: View {
                     FocusCard(
                         store: store,
                         task: task,
-                        timer: timer
+                        timer: timer,
+                        openTaskAi: windowActions?.openTaskAi
                     )
                         .opacity(draggingTaskId == task.id ? 0.45 : 1)
                         .ratkoTaskDropFrame(.task(.focus, id: task.id))
@@ -825,7 +1053,8 @@ struct RatkoPanel: View {
             ForEach(store.nextTasks) { task in
                 NextTaskRow(
                     store: store,
-                    task: task
+                    task: task,
+                    openTaskAi: windowActions?.openTaskAi
                 )
                     .opacity(draggingTaskId == task.id ? 0.45 : 1)
                     .ratkoTaskDropFrame(.task(.next, id: task.id))
@@ -867,8 +1096,13 @@ struct RatkoPanel: View {
         HStack {
             Button("TaskMaster 열기") { store.openBoard() }.buttonStyle(.plain)
             Spacer()
-            Button("종료") { NSApplication.shared.terminate(nil) }
-                .buttonStyle(.plain).foregroundStyle(.secondary)
+            if let windowActions {
+                Button("닫기") { windowActions.closePanel() }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+            } else {
+                Button("종료") { NSApplication.shared.terminate(nil) }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+            }
         }
         .font(.caption)
         .padding(12)
@@ -1018,6 +1252,7 @@ struct FocusCard: View {
     @ObservedObject var store: RatkoStore
     let task: TaskCard
     let timer: TimerRecord
+    var openTaskAi: ((String) -> Void)? = nil
     @Environment(\.openWindow) private var openWindow
     @State private var newStep = ""
     @State private var memo = ""
@@ -1109,13 +1344,13 @@ struct FocusCard: View {
                 HStack {
                     Button {
                         store.requestTaskAiStepFill(task.id)
-                        RatkoTaskAiWindowPresentation.open(taskId: task.id, using: openWindow)
+                        showTaskAi()
                     } label: {
                         Label("AI 단계 채우기", systemImage: "sparkles")
                     }
                     .buttonStyle(.plain)
                     Spacer()
-                    Button { RatkoTaskAiWindowPresentation.open(taskId: task.id, using: openWindow) } label: {
+                    Button { showTaskAi() } label: {
                         Label("AI와 대화", systemImage: "bubble.left.and.bubble.right")
                     }
                     .buttonStyle(.plain)
@@ -1185,11 +1420,20 @@ struct FocusCard: View {
         stepEditorFocused = false
     }
 
+    private func showTaskAi() {
+        if let openTaskAi {
+            openTaskAi(task.id)
+        } else {
+            RatkoTaskAiWindowPresentation.open(taskId: task.id, using: openWindow)
+        }
+    }
+
 }
 
 private struct NextTaskRow: View {
     @ObservedObject var store: RatkoStore
     let task: TaskCard
+    var openTaskAi: ((String) -> Void)? = nil
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -1210,10 +1454,10 @@ private struct NextTaskRow: View {
                 Spacer()
                 Button {
                     store.requestTaskAiStepFill(task.id)
-                    RatkoTaskAiWindowPresentation.open(taskId: task.id, using: openWindow)
+                    showTaskAi()
                 } label: { Image(systemName: "sparkles") }
                     .buttonStyle(.borderless).help("AI 단계 채우기")
-                Button { RatkoTaskAiWindowPresentation.open(taskId: task.id, using: openWindow) } label: {
+                Button { showTaskAi() } label: {
                     Image(systemName: "bubble.left.and.bubble.right")
                 }
                 .buttonStyle(.borderless).help("이 태스크로 AI와 대화")
@@ -1226,10 +1470,19 @@ private struct NextTaskRow: View {
         .contentShape(RoundedRectangle(cornerRadius: 7))
     }
 
+    private func showTaskAi() {
+        if let openTaskAi {
+            openTaskAi(task.id)
+        } else {
+            RatkoTaskAiWindowPresentation.open(taskId: task.id, using: openWindow)
+        }
+    }
+
 }
 
 struct FloatingFocusView: View {
     @ObservedObject var store: RatkoStore
+    var openTaskAi: ((String) -> Void)? = nil
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -1248,7 +1501,13 @@ struct FloatingFocusView: View {
                     Button(task.title) { store.openTask(task) }.buttonStyle(.plain).lineLimit(1)
                     Spacer()
                     Text(formattedElapsed(store.elapsed(for: timer))).font(.system(.body, design: .monospaced)).bold()
-                    Button { RatkoTaskAiWindowPresentation.open(taskId: task.id, using: openWindow) } label: {
+                    Button {
+                        if let openTaskAi {
+                            openTaskAi(task.id)
+                        } else {
+                            RatkoTaskAiWindowPresentation.open(taskId: task.id, using: openWindow)
+                        }
+                    } label: {
                         Image(systemName: "bubble.left.and.bubble.right")
                     }
                     .buttonStyle(.borderless).help("이 태스크로 AI와 대화")

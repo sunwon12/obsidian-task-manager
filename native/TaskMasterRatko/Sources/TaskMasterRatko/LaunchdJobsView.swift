@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 enum RatkoLaunchdWindowPresentation {
     static let identifier = NSUserInterfaceItemIdentifier("ratko-launchd-jobs")
+    private static var appKitWindow: NSWindow?
 
     static func open(using openWindow: OpenWindowAction) {
         openWindow(id: "ratko-launchd-jobs")
@@ -11,6 +12,27 @@ enum RatkoLaunchdWindowPresentation {
             NSApplication.shared.activate(ignoringOtherApps: true)
             NSApplication.shared.windows.first { $0.identifier == identifier }?.makeKeyAndOrderFront(nil)
         }
+    }
+
+    static func open(store: LaunchdJobsStore) {
+        if let window = NSApplication.shared.windows.first(where: { $0.identifier == identifier }) {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 720, height: 720),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "launchd 자동화"
+        window.identifier = identifier
+        window.contentView = NSHostingView(rootView: LaunchdJobsView(store: store))
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        appKitWindow = window
     }
 
     static func register(_ window: NSWindow) {

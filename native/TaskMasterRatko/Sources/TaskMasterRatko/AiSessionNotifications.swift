@@ -108,9 +108,14 @@ enum AiSessionNotifications {
 
 final class RatkoApplicationDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     var onOpenAiSessions: (() -> Void)?
+    var onToggleQuickPanel: (() -> Void)?
+    private var globalHotKey: RatkoGlobalHotKey?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
+        globalHotKey = RatkoGlobalHotKey { [weak self] in
+            self?.onToggleQuickPanel?()
+        }
         if ProcessInfo.processInfo.environment["RATKO_NOTIFICATION_TEST"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 AiSessionNotifications.deliverTestNotification()

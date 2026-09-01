@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Foundation
 import XCTest
 @testable import TaskMasterRatko
@@ -77,6 +78,14 @@ final class TaskMarkdownRepositoryTests: XCTestCase {
         XCTAssertEqual(RatkoPanelSizing.clamp(200, visibleScreenHeight: 900), 360)
         XCTAssertEqual(RatkoPanelSizing.clamp(1_000, visibleScreenHeight: 900), 884)
         XCTAssertEqual(RatkoPanelSizing.maximumHeight(visibleScreenHeight: 300), 360)
+    }
+
+    func testGlobalShortcutUsesRequestedCommandTChord() {
+        XCTAssertEqual(RatkoGlobalShortcutSpec.displayName, "⌘T")
+        XCTAssertEqual(RatkoGlobalShortcutSpec.keyCode, UInt32(kVK_ANSI_T))
+        XCTAssertEqual(RatkoGlobalShortcutSpec.modifiers & UInt32(controlKey), 0)
+        XCTAssertEqual(RatkoGlobalShortcutSpec.modifiers & UInt32(optionKey), 0)
+        XCTAssertNotEqual(RatkoGlobalShortcutSpec.modifiers & UInt32(cmdKey), 0)
     }
 
     @MainActor
